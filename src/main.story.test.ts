@@ -25,10 +25,10 @@ describe('workflow engine update', () => {
   test('submitting a draft moves the document into the first approval status', () => {
     const [nextModel, commands] = update(
       defaultModel(),
-      ClickedRequestedTransition({ transitionId: 'submit-to-manager' }),
+      ClickedRequestedTransition({ transitionId: 'draft-to-pending-approval' }),
     )
 
-    expect(documentStatus(nextModel)).toBe('waiting-manager-approval')
+    expect(documentStatus(nextModel)).toBe('PENDING_APPROVAL')
     expect(nextModel.workspace.documents[0]?.effectLog[0]?.type).toBe(
       'SendNotification',
     )
@@ -38,7 +38,7 @@ describe('workflow engine update', () => {
   test('approval status blocks document edits', () => {
     const [nextModel] = update(
       defaultModel(),
-      ClickedRequestedTransition({ transitionId: 'submit-to-manager' }),
+      ClickedRequestedTransition({ transitionId: 'draft-to-pending-approval' }),
     )
     const status = nextModel.workspace.workflow.statuses.find(
       item => item.id === nextModel.workspace.documents[0]?.currentStatusId,
@@ -48,64 +48,64 @@ describe('workflow engine update', () => {
     expect(status?.editPolicy.changeDeliveryDate).toBe(false)
   })
 
-  test('manager approval records approval and advances to finance review', () => {
+  test('manager approval records approval and advances to approved', () => {
     const [inApproval] = update(
       defaultModel(),
-      ClickedRequestedTransition({ transitionId: 'submit-to-manager' }),
+      ClickedRequestedTransition({ transitionId: 'draft-to-pending-approval' }),
     )
     const [asManager] = update(inApproval, SelectedActor({ actorId: 'maria' }))
     const [nextModel] = update(
       asManager,
-      ClickedRequestedTransition({ transitionId: 'manager-approves' }),
+      ClickedRequestedTransition({ transitionId: 'pending-approval-to-approved' }),
     )
 
-    expect(documentStatus(nextModel)).toBe('finance-review')
+    expect(documentStatus(nextModel)).toBe('APPROVED')
     expect(
       nextModel.workspace.documents[0]?.eventLog.map(event => event.label),
-    ).toContain('Maria Manager approved Manager approves')
+    ).toContain('Maria Manager approved Approve')
   })
 
-  test('high amount finance approval routes to director approval', () => {
-    const [atFinance] = update(
+  test('high amount approval uses the high amount approval rule', () => {
+    const [atApproval] = update(
       defaultModel(),
       SelectedDocumentStatus({
         documentId: 'req-1001',
-        statusId: 'finance-review',
+        statusId: 'PENDING_APPROVAL',
       }),
     )
-    const [asFinance] = update(atFinance, SelectedActor({ actorId: 'ana' }))
+    const [asManager] = update(atApproval, SelectedActor({ actorId: 'maria' }))
     const [nextModel] = update(
-      asFinance,
-      ClickedRequestedTransition({ transitionId: 'finance-approves-high' }),
+      asManager,
+      ClickedRequestedTransition({ transitionId: 'pending-approval-to-approved' }),
     )
 
-    expect(documentStatus(nextModel)).toBe('director-approval')
+    expect(documentStatus(nextModel)).toBe('APPROVED')
   })
 
-  test('standard amount finance approval can finish approval flow', () => {
-    const [atFinance] = update(
+  test('standard amount approval can finish approval flow', () => {
+    const [atApproval] = update(
       defaultModel(),
       SelectedDocumentStatus({
         documentId: 'req-1001',
-        statusId: 'finance-review',
+        statusId: 'PENDING_APPROVAL',
       }),
     )
     const [standardAmount] = update(
-      atFinance,
+      atApproval,
       UpdatedDocumentAmount({ documentId: 'req-1001', value: '9000' }),
     )
-    const [asFinance] = update(
+    const [asManager] = update(
       standardAmount,
-      SelectedActor({ actorId: 'ana' }),
+      SelectedActor({ actorId: 'maria' }),
     )
     const [nextModel] = update(
-      asFinance,
+      asManager,
       ClickedRequestedTransition({
-        transitionId: 'finance-approves-standard',
+        transitionId: 'pending-approval-to-approved',
       }),
     )
 
-    expect(documentStatus(nextModel)).toBe('approved')
+    expect(documentStatus(nextModel)).toBe('APPROVED')
   })
 
   test('completed save messages do not change model', () => {
@@ -148,24 +148,24 @@ describe('workflow engine update', () => {
   test('deleting a status removes connected transitions and resets documents in that status', () => {
     const [waitingApproval] = update(
       defaultModel(),
-      ClickedRequestedTransition({ transitionId: 'submit-to-manager' }),
+      ClickedRequestedTransition({ transitionId: 'draft-to-pending-approval' }),
     )
     const [nextModel, commands] = update(
       waitingApproval,
-      ClickedDeletedStatus({ statusId: 'waiting-manager-approval' }),
+      ClickedDeletedStatus({ statusId: 'PENDING_APPROVAL' }),
     )
 
     expect(
       nextModel.workspace.workflow.statuses.map(status => status.id),
-    ).not.toContain('waiting-manager-approval')
+    ).not.toContain('PENDING_APPROVAL')
     expect(
       nextModel.workspace.workflow.transitions.some(
         transition =>
-          transition.fromStatusId === 'waiting-manager-approval' ||
-          transition.toStatusId === 'waiting-manager-approval',
+          transition.fromStatusId === 'PENDING_APPROVAL' ||
+          transition.toStatusId === 'PENDING_APPROVAL',
       ),
     ).toBe(false)
-    expect(documentStatus(nextModel)).toBe('draft')
+    expect(documentStatus(nextModel)).toBe('DRAFT')
     expect(nextModel.workspace.selectedItemKind).toBe('Workflow')
     expect(commands.length).toBe(1)
   })
@@ -173,11 +173,11 @@ describe('workflow engine update', () => {
   test('deleting the initial status is blocked', () => {
     const [nextModel, commands] = update(
       defaultModel(),
-      ClickedDeletedStatus({ statusId: 'draft' }),
+      ClickedDeletedStatus({ statusId: 'DRAFT' }),
     )
 
     expect(nextModel.workspace.workflow.statuses.map(status => status.id)).toContain(
-      'draft',
+      'DRAFT',
     )
     expect(nextModel.workspace.banner).toBe('Initial status cannot be deleted')
     expect(commands).toStrictEqual([])
@@ -187,22 +187,22 @@ describe('workflow engine update', () => {
     const model = defaultModel()
     const managerReturnTransition: Workflow.Transition = {
       id: 'manager-back-to-draft',
-      fromStatusId: 'waiting-manager-approval',
-      toStatusId: 'draft',
+      fromStatusId: 'PENDING_APPROVAL',
+      toStatusId: 'DRAFT',
       label: 'Manager returns to draft',
-      requiresApproval: false,
-      approvalMode: 'all',
-      approvalRules: [],
+      allowedRoles: ['OrderModerator'],
+      requiresComment: false,
+      sortOrder: 'test-1',
       effects: [],
     }
     const financeReturnTransition: Workflow.Transition = {
       id: 'finance-back-to-draft',
-      fromStatusId: 'finance-review',
-      toStatusId: 'draft',
+      fromStatusId: 'APPROVED',
+      toStatusId: 'DRAFT',
       label: 'Finance returns to draft',
-      requiresApproval: false,
-      approvalMode: 'all',
-      approvalRules: [],
+      allowedRoles: ['OrderModeratorLimited'],
+      requiresComment: false,
+      sortOrder: 'test-2',
       effects: [],
     }
     const workflow = {

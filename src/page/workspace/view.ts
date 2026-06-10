@@ -1,47 +1,50 @@
 import clsx from 'clsx'
-import { Array, Option, pipe } from 'effect'
+import { Array, Option } from 'effect'
 import { Html, html } from 'foldkit/html'
 
 import { Graph, Workflow } from '../../domain'
 import {
-  ClickedAddedApprovalRule,
   ClickedAddedStatus,
+  ClickedAddedApprovalRule,
   ClickedAddedTransition,
   ClickedAddedTransitionEffect,
   ClickedDeletedStatus,
+  ClickedDeletedTransition,
   ClickedRemovedApprovalRule,
   ClickedRemovedTransitionEffect,
   ClickedResetGraphViewport,
-  ClickedResetWorkspace,
+  ClickedLoadedRemoteFlowDefinitions,
+  ClickedPublishedRemoteFlow,
+  ClickedSavedRemoteFlowDraft,
+  ClickedSavedPreviewLocal,
   ClickedToggledStatusLock,
-  ClickedToggledTransitionApproval,
+  ClickedToggledActionMenu,
+  ClickedToggledTransitionRole,
+  ClickedUndidFlowChanges,
   ClickedZoomedGraphIn,
   ClickedZoomedGraphOut,
   type Message,
   MovedGraphCanvasPointer,
   PressedGraphCanvas,
   ReleasedGraphCanvasPointer,
-  SelectedApprovalRuleRole,
   SelectedStatus,
+  SelectedApprovalRuleRole,
   SelectedStatusType,
   SelectedTransition,
   SelectedTransitionFromStatus,
   SelectedTransitionToStatus,
-  UpdatedApprovalRuleMaxAmount,
-  UpdatedApprovalRuleMinAmount,
-  UpdatedApprovalRuleRequiredCount,
   UpdatedStatusName,
+  UpdatedApprovalRuleMinAmount,
   UpdatedTransitionLabel,
+  UpdatedTransitionSortOrder,
 } from './message'
 import type { Model } from './model'
 
 const statusTypes: ReadonlyArray<Workflow.StatusType> = [
   'draft',
   'normal',
-  'approvalPending',
-  'integration',
-  'error',
-  'terminal',
+  'approval',
+  'final',
 ]
 
 const effectTypes: ReadonlyArray<Workflow.EffectType> = [
@@ -56,6 +59,15 @@ const lockFields: ReadonlyArray<Workflow.LockField> = [
   'removeItems',
   'changeDeliveryDate',
   'changeAmount',
+]
+
+const transitionRoleIds: ReadonlyArray<string> = [
+  'SystemAdmin',
+  'OrderModerator',
+  'OrderModeratorLimited',
+  'OrderCreator',
+  'CatalogManager',
+  'ClientUser',
 ]
 
 const cardClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm'
@@ -81,17 +93,11 @@ const statusTypeFromString = (value: string): Workflow.StatusType => {
   if (value === 'draft') {
     return 'draft'
   }
-  if (value === 'approvalPending') {
-    return 'approvalPending'
+  if (value === 'approval') {
+    return 'approval'
   }
-  if (value === 'integration') {
-    return 'integration'
-  }
-  if (value === 'error') {
-    return 'error'
-  }
-  if (value === 'terminal') {
-    return 'terminal'
+  if (value === 'final') {
+    return 'final'
   }
   return 'normal'
 }
@@ -122,6 +128,13 @@ const lockFieldLabel = (field: Workflow.LockField): string => {
   return 'Change amount'
 }
 
+const approvalAmountRangeLabel = (rule: Workflow.ApprovalRule): string => {
+  if (rule.minAmount <= 1) {
+    return 'all amounts'
+  }
+  return `amounts from ${rule.minAmount}`
+}
+
 const effectBadgeLabel = (effectType: Workflow.EffectType): string => {
   if (effectType === 'SyncExternalSystem') {
     return 'Sync'
@@ -134,13 +147,6 @@ const effectBadgeLabel = (effectType: Workflow.EffectType): string => {
   }
   return 'Webhook'
 }
-
-const roleIds = (model: Model): ReadonlyArray<string> =>
-  pipe(
-    model.actors,
-    Array.flatMap(actor => actor.roleIds),
-    Array.dedupe,
-  )
 
 const panel = (
   title: string,
@@ -171,11 +177,9 @@ const statusBadge = (status: Workflow.Status): Html => {
     [
       h.Class(
         clsx('inline-flex rounded-full px-2.5 py-1 text-xs font-semibold', {
-          'bg-amber-100 text-amber-800': status.type === 'approvalPending',
+          'bg-amber-100 text-amber-800': status.type === 'approval',
           'bg-blue-100 text-blue-800': status.type === 'draft',
-          'bg-purple-100 text-purple-800': status.type === 'integration',
-          'bg-red-100 text-red-800': status.type === 'error',
-          'bg-emerald-100 text-emerald-800': status.type === 'terminal',
+          'bg-emerald-100 text-emerald-800': status.type === 'final',
           'bg-slate-100 text-slate-700': status.type === 'normal',
         }),
       ),
@@ -193,10 +197,8 @@ const nodeClass = (node: Graph.GraphNode, model: Model): string => {
     'absolute rounded-2xl border-2 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500',
     {
       'border-blue-300': node.status.type === 'draft',
-      'border-amber-300': node.status.type === 'approvalPending',
-      'border-purple-300': node.status.type === 'integration',
-      'border-red-300': node.status.type === 'error',
-      'border-emerald-300': node.status.type === 'terminal',
+      'border-amber-300': node.status.type === 'approval',
+      'border-emerald-300': node.status.type === 'final',
       'border-slate-300': node.status.type === 'normal',
       'outline outline-4 outline-offset-2 outline-slate-900': isSelected,
     },
@@ -446,28 +448,127 @@ const graphCanvas = (model: Model): Html => {
   const layout = Graph.layout(model.workflow)
   const isPanning = model.graphPanState._tag === 'GraphPanning'
 
-  return panel(
-    'Workflow Map',
-    'Auto-layout flow visualizer for the workflow definition.',
+  return h.div(
+    [
+      h.Style({ touchAction: 'none' }),
+      h.Class('relative h-full min-h-[32rem] overflow-hidden bg-slate-50'),
+    ],
     [
       h.div(
-        [h.Class('flex flex-wrap items-center justify-between gap-3')],
         [
-          h.p(
-            [h.Class('text-xs text-slate-500')],
+          h.OnPointerDown((_, button, screenX, screenY) => {
+            if (button !== 0) {
+              return Option.none()
+            }
+            return Option.some(PressedGraphCanvas({ screenX, screenY }))
+          }),
+          h.OnPointerMove((screenX, screenY) =>
+            isPanning
+              ? Option.some(MovedGraphCanvasPointer({ screenX, screenY }))
+              : Option.none(),
+          ),
+          h.OnPointerUp(() =>
+            isPanning ? Option.some(ReleasedGraphCanvasPointer()) : Option.none(),
+          ),
+          h.OnPointerLeave(() =>
+            isPanning ? Option.some(ReleasedGraphCanvasPointer()) : Option.none(),
+          ),
+          h.Style({ touchAction: 'none' }),
+          h.Attribute('role', 'region'),
+          h.Attribute('aria-label', 'Workflow canvas'),
+          h.Class(
+            clsx('absolute inset-0 z-10', {
+              'cursor-grabbing': isPanning,
+              'cursor-grab': !isPanning,
+            }),
+          ),
+        ],
+        [
+          h.div(
             [
-              'Drag the empty canvas to move the flow. Use zoom controls to inspect dense workflows.',
+              h.Style({
+                position: 'relative',
+                width: `${layout.width}px`,
+                height: `${layout.height}px`,
+                transform: `translate(${model.graphPanX}px, ${model.graphPanY}px) scale(${model.graphZoom})`,
+                transformOrigin: '0 0',
+              }),
+              h.Class('z-10'),
+            ],
+            [
+              h.svg(
+                [
+                  h.Attribute('viewBox', `0 0 ${layout.width} ${layout.height}`),
+                  h.Style({
+                    position: 'absolute',
+                    inset: '0',
+                    width: `${layout.width}px`,
+                    height: `${layout.height}px`,
+                    pointerEvents: 'auto',
+                  }),
+                  h.AriaHidden(true),
+                ],
+                graphEdges(layout, model),
+              ),
+              ...Array.map(layout.edges, edge => transitionLabel(edge, model)),
+              ...Array.map(layout.nodes, node => graphNode(node, model)),
             ],
           ),
-          h.div(
-            [h.Class('flex flex-wrap items-center gap-2')],
+        ],
+      ),
+      embeddedControls(model),
+      dirtyFlowIndicator(model),
+      selectedInspectorDrawer(model),
+    ],
+  )
+}
+
+const dirtyFlowIndicator = (model: Model): Html => {
+  const h = html<Message>()
+
+  if (!model.isDirty) {
+    return h.empty
+  }
+
+  return h.div(
+    [
+      h.Class(
+        'absolute right-4 top-4 z-30 flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50/95 px-3 py-2 text-sm font-medium text-amber-900 shadow-lg backdrop-blur',
+      ),
+    ],
+    [
+      h.span([], ['Flow changed']),
+      h.button(
+        [
+          h.Type('button'),
+          h.Disabled(Array.isReadonlyArrayEmpty(model.undoStack)),
+          h.OnClick(ClickedUndidFlowChanges()),
+          h.Class(
+            clsx(buttonClass, 'border-amber-300 bg-white px-2 py-1 text-xs'),
+          ),
+        ],
+        ['Undo'],
+      ),
+    ],
+  )
+}
+
+const embeddedControls = (model: Model): Html => {
+  const h = html<Message>()
+
+  return h.div(
+    [h.Class('absolute bottom-4 left-4 z-30 flex flex-col items-start gap-2')],
+    [
+      model.isActionMenuOpen
+        ? h.div(
+            [
+              h.Class(
+                'mb-1 grid min-w-56 gap-2 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-xl backdrop-blur',
+              ),
+            ],
             [
               h.button(
-                [
-                  h.Type('button'),
-                  h.OnClick(ClickedAddedStatus()),
-                  h.Class(buttonClass),
-                ],
+                [h.Type('button'), h.OnClick(ClickedAddedStatus()), h.Class(buttonClass)],
                 ['Add status'],
               ),
               h.button(
@@ -478,316 +579,64 @@ const graphCanvas = (model: Model): Html => {
                 ],
                 ['Add transition'],
               ),
-            ],
-          ),
-        ],
-      ),
-      h.div(
-        [
-          h.Style({ touchAction: 'none' }),
-          h.Class(
-            'relative mt-4 h-[44rem] overflow-hidden rounded-2xl border border-slate-200 bg-slate-50',
-          ),
-        ],
-        [
-          h.div(
-            [
-              h.Class(
-                'absolute right-4 top-4 z-30 flex items-center gap-2 rounded-xl border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur',
-              ),
-            ],
-            [
               h.button(
                 [
                   h.Type('button'),
-                  h.OnClick(ClickedZoomedGraphOut()),
-                  h.Class(iconButtonClass),
-                ],
-                ['-'],
-              ),
-              h.span(
-                [
-                  h.Class(
-                    'min-w-14 text-center text-sm font-semibold text-slate-600',
-                  ),
-                ],
-                [`${Math.round(model.graphZoom * 100)}%`],
-              ),
-              h.button(
-                [
-                  h.Type('button'),
-                  h.OnClick(ClickedZoomedGraphIn()),
-                  h.Class(iconButtonClass),
-                ],
-                ['+'],
-              ),
-              h.button(
-                [
-                  h.Type('button'),
-                  h.OnClick(ClickedResetGraphViewport()),
+                  h.OnClick(ClickedSavedPreviewLocal()),
                   h.Class(buttonClass),
                 ],
-                ['Reset view'],
+                ['Save preview'],
               ),
-            ],
-          ),
-          h.div(
-            [
-              h.OnPointerDown((_, button, screenX, screenY) => {
-                if (button !== 0) {
-                  return Option.none()
-                }
-                return Option.some(PressedGraphCanvas({ screenX, screenY }))
-              }),
-              h.OnPointerMove((screenX, screenY) =>
-                isPanning
-                  ? Option.some(MovedGraphCanvasPointer({ screenX, screenY }))
-                  : Option.none(),
-              ),
-              h.OnPointerUp(() =>
-                isPanning
-                  ? Option.some(ReleasedGraphCanvasPointer())
-                  : Option.none(),
-              ),
-              h.OnPointerLeave(() =>
-                isPanning
-                  ? Option.some(ReleasedGraphCanvasPointer())
-                  : Option.none(),
-              ),
-              h.Style({ touchAction: 'none' }),
-              h.Attribute('role', 'region'),
-              h.Attribute('aria-label', 'Workflow canvas'),
-              h.Class(
-                clsx('absolute inset-0 z-10', {
-                  'cursor-grabbing': isPanning,
-                  'cursor-grab': !isPanning,
-                }),
-              ),
-            ],
-            [
-              h.div(
-                [
-                  h.Style({
-                    position: 'relative',
-                    width: `${layout.width}px`,
-                    height: `${layout.height}px`,
-                    transform: `translate(${model.graphPanX}px, ${model.graphPanY}px) scale(${model.graphZoom})`,
-                    transformOrigin: '0 0',
-                  }),
-                  h.Class('z-10'),
-                ],
-                [
-                  h.svg(
+              model.isPreviewSaved
+                ? h.button(
                     [
-                      h.Attribute(
-                        'viewBox',
-                        `0 0 ${layout.width} ${layout.height}`,
-                      ),
-                      h.Style({
-                        position: 'absolute',
-                        inset: '0',
-                        width: `${layout.width}px`,
-                        height: `${layout.height}px`,
-                        pointerEvents: 'auto',
-                      }),
-                      h.AriaHidden(true),
+                      h.Type('button'),
+                      h.OnClick(ClickedPublishedRemoteFlow()),
+                      h.Class(buttonClass),
                     ],
-                    graphEdges(layout, model),
-                  ),
-                  ...Array.map(layout.edges, edge =>
-                    transitionLabel(edge, model),
-                  ),
-                  ...Array.map(layout.nodes, node => graphNode(node, model)),
-                ],
-              ),
-            ],
-          ),
-          selectedInspectorDrawer(model),
-        ],
-      ),
-    ],
-  )
-}
-
-const approvalRulesEditor = (
-  model: Model,
-  transition: Workflow.Transition,
-): Html => {
-  const h = html<Message>()
-  const roles = roleIds(model)
-
-  return h.div(
-    [h.Class('mt-5 space-y-3')],
-    [
-      h.div(
-        [h.Class('flex items-center justify-between gap-3')],
-        [
-          h.h3([h.Class(headingClass)], ['Approval rules']),
-          h.div(
-            [h.Class('flex flex-wrap gap-2')],
-            Array.map(roles, roleId =>
+                    ['Publish'],
+                  )
+                : h.empty,
               h.button(
                 [
                   h.Type('button'),
-                  h.OnClick(
-                    ClickedAddedApprovalRule({
-                      transitionId: transition.id,
-                      roleId,
-                    }),
-                  ),
+                  h.OnClick(ClickedLoadedRemoteFlowDefinitions()),
                   h.Class(buttonClass),
                 ],
-                [`Add ${Workflow.roleLabel(roleId)}`],
+                ['Reload from server'],
               ),
-            ),
-          ),
-        ],
-      ),
-      Array.isReadonlyArrayEmpty(transition.approvalRules)
-        ? h.p(
-            [h.Class('rounded-xl bg-slate-50 p-3 text-sm text-slate-500')],
-            ['No approval rules yet. Add a role to require approval.'],
+            ],
           )
-        : h.div(
-            [h.Class('overflow-hidden rounded-xl border border-slate-200')],
-            [
-              h.table(
-                [h.Class(tableClass)],
-                [
-                  h.thead(
-                    [h.Class(tableHeadClass)],
-                    [
-                      h.tr(
-                        [],
-                        [
-                          h.th(
-                            [h.Scope('col'), h.Class(tableCellClass)],
-                            ['Role'],
-                          ),
-                          h.th(
-                            [h.Scope('col'), h.Class(tableCellClass)],
-                            ['Min'],
-                          ),
-                          h.th(
-                            [h.Scope('col'), h.Class(tableCellClass)],
-                            ['Max'],
-                          ),
-                          h.th(
-                            [h.Scope('col'), h.Class(tableCellClass)],
-                            ['Count'],
-                          ),
-                          h.th([h.Scope('col'), h.Class(tableCellClass)], ['']),
-                        ],
-                      ),
-                    ],
-                  ),
-                  h.tbody(
-                    [h.Class('divide-y divide-slate-200')],
-                    Array.map(transition.approvalRules, rule =>
-                      h.tr(
-                        [],
-                        [
-                          h.td(
-                            [h.Class(tableCellClass)],
-                            [
-                              h.select(
-                                [
-                                  h.Value(rule.roleId),
-                                  h.OnChange(roleId =>
-                                    SelectedApprovalRuleRole({
-                                      transitionId: transition.id,
-                                      ruleId: rule.id,
-                                      roleId,
-                                    }),
-                                  ),
-                                  h.Class(inputClass),
-                                ],
-                                Array.map(roles, roleId =>
-                                  h.option(
-                                    [h.Value(roleId)],
-                                    [Workflow.roleLabel(roleId)],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          h.td(
-                            [h.Class(tableCellClass)],
-                            [
-                              h.input([
-                                h.Type('number'),
-                                h.Value(`${rule.minAmount}`),
-                                h.OnInput(value =>
-                                  UpdatedApprovalRuleMinAmount({
-                                    transitionId: transition.id,
-                                    ruleId: rule.id,
-                                    value,
-                                  }),
-                                ),
-                                h.Class(inputClass),
-                              ]),
-                            ],
-                          ),
-                          h.td(
-                            [h.Class(tableCellClass)],
-                            [
-                              h.input([
-                                h.Type('number'),
-                                h.Value(`${rule.maxAmount}`),
-                                h.OnInput(value =>
-                                  UpdatedApprovalRuleMaxAmount({
-                                    transitionId: transition.id,
-                                    ruleId: rule.id,
-                                    value,
-                                  }),
-                                ),
-                                h.Class(inputClass),
-                              ]),
-                            ],
-                          ),
-                          h.td(
-                            [h.Class(tableCellClass)],
-                            [
-                              h.input([
-                                h.Type('number'),
-                                h.Value(`${rule.requiredCount}`),
-                                h.OnInput(value =>
-                                  UpdatedApprovalRuleRequiredCount({
-                                    transitionId: transition.id,
-                                    ruleId: rule.id,
-                                    value,
-                                  }),
-                                ),
-                                h.Class(inputClass),
-                              ]),
-                            ],
-                          ),
-                          h.td(
-                            [h.Class(tableCellClass)],
-                            [
-                              h.button(
-                                [
-                                  h.Type('button'),
-                                  h.OnClick(
-                                    ClickedRemovedApprovalRule({
-                                      transitionId: transition.id,
-                                      ruleId: rule.id,
-                                    }),
-                                  ),
-                                  h.Class(dangerButtonClass),
-                                ],
-                                ['Remove'],
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+        : h.empty,
+      h.div(
+        [
+          h.Class(
+            'flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-lg backdrop-blur',
           ),
+        ],
+        [
+          h.button(
+            [h.Type('button'), h.OnClick(ClickedToggledActionMenu()), h.Class(iconButtonClass)],
+            ['Menu'],
+          ),
+          h.button(
+            [h.Type('button'), h.OnClick(ClickedZoomedGraphOut()), h.Class(iconButtonClass)],
+            ['-'],
+          ),
+          h.span(
+            [h.Class('min-w-14 text-center text-sm font-semibold text-slate-600')],
+            [`${Math.round(model.graphZoom * 100)}%`],
+          ),
+          h.button(
+            [h.Type('button'), h.OnClick(ClickedZoomedGraphIn()), h.Class(iconButtonClass)],
+            ['+'],
+          ),
+          h.button(
+            [h.Type('button'), h.OnClick(ClickedResetGraphViewport()), h.Class(buttonClass)],
+            ['Reset view'],
+          ),
+        ],
+      ),
     ],
   )
 }
@@ -910,6 +759,7 @@ const statusInspector = (model: Model, statusId: string): Html => {
                     ['Status name'],
                   ),
                   h.input([
+                    h.Key(`status-name-${status.id}`),
                     h.Id('status-name'),
                     h.Value(status.name),
                     h.OnInput(value =>
@@ -931,6 +781,7 @@ const statusInspector = (model: Model, statusId: string): Html => {
                   ),
                   h.select(
                     [
+                      h.Key(`status-type-${status.id}`),
                       h.Id('status-type'),
                       h.Value(status.type),
                       h.OnChange(value =>
@@ -943,7 +794,10 @@ const statusInspector = (model: Model, statusId: string): Html => {
                     ],
                     Array.map(statusTypes, statusType =>
                       h.option(
-                        [h.Value(statusType)],
+                        [
+                          h.Value(statusType),
+                          h.Selected(statusType === status.type),
+                        ],
                         [Workflow.statusTypeLabel(statusType)],
                       ),
                     ),
@@ -985,6 +839,141 @@ const statusInspector = (model: Model, statusId: string): Html => {
               ),
             ],
           ),
+          status.type === 'approval'
+            ? h.div(
+                [h.Class('mt-5')],
+                [
+                  h.div(
+                    [h.Class('flex items-center justify-between gap-3')],
+                    [
+                      h.h3([h.Class(headingClass)], ['Approval rules']),
+                      h.button(
+                        [
+                          h.Type('button'),
+                          h.OnClick(
+                            ClickedAddedApprovalRule({ statusId: status.id }),
+                          ),
+                          h.Class(buttonClass),
+                        ],
+                        ['Add rule'],
+                      ),
+                    ],
+                  ),
+                  status.approval === undefined
+                    ? h.p(
+                        [
+                          h.Class(
+                            'mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800',
+                          ),
+                        ],
+                        ['This approval status has no approval rules yet.'],
+                      )
+                    : h.div(
+                        [h.Class('mt-3 space-y-3')],
+                        Array.map(status.approval.rules, rule =>
+                          h.div(
+                            [
+                              h.Class(
+                                'rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700',
+                              ),
+                            ],
+                            [
+                              h.div(
+                                [h.Class('font-medium text-slate-900')],
+                                [
+                                  `${Workflow.roleLabel(rule.roleId)} approves ${approvalAmountRangeLabel(rule)}`,
+                                ],
+                              ),
+                              h.div(
+                                [h.Class('mt-3 grid gap-3 sm:grid-cols-2')],
+                                [
+                                  h.div(
+                                    [h.Class('space-y-1')],
+                                    [
+                                      h.label(
+                                        [
+                                          h.For(`approval-role-${rule.id}`),
+                                          h.Class(
+                                            'text-xs font-medium text-slate-600',
+                                          ),
+                                        ],
+                                        ['Approver role'],
+                                      ),
+                                      h.select(
+                                        [
+                                          h.Id(`approval-role-${rule.id}`),
+                                          h.Value(rule.roleId),
+                                          h.OnChange(roleId =>
+                                            SelectedApprovalRuleRole({
+                                              statusId: status.id,
+                                              ruleId: rule.id,
+                                              roleId,
+                                            }),
+                                          ),
+                                          h.Class(inputClass),
+                                        ],
+                                        Array.map(transitionRoleIds, roleId =>
+                                          h.option(
+                                            [
+                                              h.Value(roleId),
+                                              h.Selected(roleId === rule.roleId),
+                                            ],
+                                            [Workflow.roleLabel(roleId)],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  h.div(
+                                    [h.Class('space-y-1')],
+                                    [
+                                      h.label(
+                                        [
+                                          h.For(`approval-min-${rule.id}`),
+                                          h.Class(
+                                            'text-xs font-medium text-slate-600',
+                                          ),
+                                        ],
+                                        ['Min amount'],
+                                      ),
+                                      h.input([
+                                        h.Id(`approval-min-${rule.id}`),
+                                        h.Type('number'),
+                                        h.Attribute('min', '1'),
+                                        h.Value(`${rule.minAmount}`),
+                                        h.OnInput(value =>
+                                          UpdatedApprovalRuleMinAmount({
+                                            statusId: status.id,
+                                            ruleId: rule.id,
+                                            value,
+                                          }),
+                                        ),
+                                        h.Class(inputClass),
+                                      ]),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              h.button(
+                                [
+                                  h.Type('button'),
+                                  h.OnClick(
+                                    ClickedRemovedApprovalRule({
+                                      statusId: status.id,
+                                      ruleId: rule.id,
+                                    }),
+                                  ),
+                                  h.Class(clsx(dangerButtonClass, 'mt-3')),
+                                ],
+                                ['Remove rule'],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                ],
+              )
+            : h.empty,
           h.div(
             [h.Class('mt-5 border-t border-slate-200 pt-5')],
             [
@@ -1046,6 +1035,29 @@ const transitionInspector = (model: Model, transitionId: string): Html => {
                 ],
               ),
               h.div(
+                [h.Class('space-y-2')],
+                [
+                  h.label(
+                    [
+                      h.For('transition-sort-order'),
+                      h.Class('text-sm font-medium text-slate-700'),
+                    ],
+                    ['Sort order'],
+                  ),
+                  h.input([
+                    h.Id('transition-sort-order'),
+                    h.Value(transition.sortOrder),
+                    h.OnInput(value =>
+                      UpdatedTransitionSortOrder({
+                        transitionId: transition.id,
+                        value,
+                      }),
+                    ),
+                    h.Class(inputClass),
+                  ]),
+                ],
+              ),
+              h.div(
                 [h.Class('grid gap-4 sm:grid-cols-2')],
                 [
                   h.div(
@@ -1071,7 +1083,13 @@ const transitionInspector = (model: Model, transitionId: string): Html => {
                           h.Class(inputClass),
                         ],
                         Array.map(model.workflow.statuses, status =>
-                          h.option([h.Value(status.id)], [status.name]),
+                          h.option(
+                            [
+                              h.Value(status.id),
+                              h.Selected(status.id === transition.fromStatusId),
+                            ],
+                            [status.name],
+                          ),
                         ),
                       ),
                     ],
@@ -1099,7 +1117,13 @@ const transitionInspector = (model: Model, transitionId: string): Html => {
                           h.Class(inputClass),
                         ],
                         Array.map(model.workflow.statuses, status =>
-                          h.option([h.Value(status.id)], [status.name]),
+                          h.option(
+                            [
+                              h.Value(status.id),
+                              h.Selected(status.id === transition.toStatusId),
+                            ],
+                            [status.name],
+                          ),
                         ),
                       ),
                     ],
@@ -1111,37 +1135,72 @@ const transitionInspector = (model: Model, transitionId: string): Html => {
                 [
                   h.span(
                     [h.Class('text-sm font-medium text-slate-700')],
-                    ['Approval behavior'],
+                    ['Who can execute this transition'],
                   ),
-                  h.button(
-                    [
-                      h.Type('button'),
-                      h.OnClick(
-                        ClickedToggledTransitionApproval({
-                          transitionId: transition.id,
-                        }),
-                      ),
-                      h.Class(
-                        clsx(buttonClass, 'w-full', {
-                          'border-amber-200 bg-amber-50 text-amber-800':
-                            transition.requiresApproval,
-                        }),
-                      ),
-                    ],
-                    [
-                      transition.requiresApproval
-                        ? 'Requires approval'
-                        : 'Direct move',
-                    ],
+                  h.div(
+                    [h.Class('grid gap-2 sm:grid-cols-2')],
+                    Array.map(transitionRoleIds, roleId => {
+                      const isAllowed = Array.contains(
+                        transition.allowedRoles,
+                        roleId,
+                      )
+
+                      return h.button(
+                        [
+                          h.Type('button'),
+                          h.OnClick(
+                            ClickedToggledTransitionRole({
+                              transitionId: transition.id,
+                              roleId,
+                            }),
+                          ),
+                          h.AriaPressed(isAllowed ? 'true' : 'false'),
+                          h.Style(
+                            isAllowed
+                              ? {
+                                  backgroundColor: '#dcfce7',
+                                  borderColor: '#86efac',
+                                  color: '#166534',
+                                }
+                              : {
+                                  backgroundColor: '#ffffff',
+                                  borderColor: '#cbd5e1',
+                                  color: '#475569',
+                                },
+                          ),
+                          h.Class(
+                            clsx(buttonClass, {
+                              'shadow-sm ring-2 ring-green-200': isAllowed,
+                            }),
+                          ),
+                        ],
+                        [Workflow.roleLabel(roleId)],
+                      )
+                    }),
                   ),
                 ],
               ),
             ],
           ),
-          transition.requiresApproval
-            ? approvalRulesEditor(model, transition)
-            : h.empty,
-          effectsEditor(transition),
+          h.div(
+            [h.Class('border-t border-slate-200 pt-5')],
+            [
+              h.p(
+                [h.Class('mb-3 rounded-xl bg-red-50 p-3 text-sm text-red-800')],
+                ['Deleting this transition removes this action from the flow.'],
+              ),
+              h.button(
+                [
+                  h.Type('button'),
+                  h.OnClick(
+                    ClickedDeletedTransition({ transitionId: transition.id }),
+                  ),
+                  h.Class(dangerButtonClass),
+                ],
+                ['Delete transition'],
+              ),
+            ],
+          ),
         ],
       ),
   })
@@ -1151,7 +1210,8 @@ const selectedInspectorDrawer = (model: Model): Html => {
   const h = html<Message>()
 
   if (model.selectedItemKind === 'Status') {
-    return h.div(
+    return h.keyed('div')(
+      `status-inspector-${model.selectedItemId}`,
       [
         h.Class(
           'absolute bottom-4 right-4 top-20 z-40 flex w-[min(28rem,calc(100%-2rem))] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl',
@@ -1179,7 +1239,8 @@ const selectedInspectorDrawer = (model: Model): Html => {
     )
   }
   if (model.selectedItemKind === 'Transition') {
-    return h.div(
+    return h.keyed('div')(
+      `transition-inspector-${model.selectedItemId}`,
       [
         h.Class(
           'absolute bottom-4 right-4 top-20 z-40 flex w-[min(28rem,calc(100%-2rem))] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl',
@@ -1235,101 +1296,11 @@ const validationPanel = (model: Model): Html => {
   ])
 }
 
-const graphWorkspace = (model: Model): Html => {
-  const h = html<Message>()
-
-  return h.div(
-    [h.Class('grid gap-6')],
-    [graphCanvas(model), validationPanel(model)],
-  )
-}
-
 export const view = (model: Model): Html => {
   const h = html<Message>()
 
   return h.div(
-      [h.Class('min-h-screen bg-slate-100 text-slate-900')],
-      [
-        h.header(
-          [h.Class('border-b border-slate-200 bg-white')],
-          [
-            h.div(
-              [
-                h.Class(
-                  'mx-auto flex max-w-7xl flex-col gap-4 px-6 py-6 lg:flex-row lg:items-center lg:justify-between',
-                ),
-              ],
-              [
-                h.div(
-                  [],
-                  [
-                    h.p(
-                      [
-                        h.Class(
-                          'text-sm font-semibold uppercase tracking-wide text-blue-600',
-                        ),
-                      ],
-                      ['Flow Web'],
-                    ),
-                    h.h1(
-                      [h.Class('mt-1 text-3xl font-bold tracking-tight')],
-                      [model.workflow.name],
-                    ),
-                    h.p(
-                      [h.Class('mt-2 max-w-3xl text-sm text-slate-600')],
-                      [
-                        'Node-based workflow builder for ERP requisition and order status flows.',
-                      ],
-                    ),
-                  ],
-                ),
-                h.div(
-                  [
-                    h.Class(
-                      'flex flex-col items-start gap-2 sm:flex-row sm:items-center',
-                    ),
-                  ],
-                  [
-                    h.span(
-                      [
-                        h.Class(
-                          'rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700',
-                        ),
-                      ],
-                      [
-                        `${model.workflow.documentType} v${model.workflow.version}`,
-                      ],
-                    ),
-                    h.button(
-                      [
-                        h.Type('button'),
-                        h.OnClick(ClickedResetWorkspace()),
-                        h.Class(buttonClass),
-                      ],
-                      ['Reset sample'],
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ],
-        ),
-        h.main(
-          [h.Class('grid w-full gap-6 px-6 py-6')],
-          [
-            model.banner === ''
-              ? h.empty
-              : h.div(
-                  [
-                    h.Class(
-                      'rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-800',
-                    ),
-                  ],
-                  [model.banner],
-                ),
-            graphWorkspace(model),
-          ],
-        ),
-      ],
-    )
+    [h.Class('h-screen min-h-[32rem] bg-slate-50 text-slate-900')],
+    [graphCanvas(model)],
+  )
 }

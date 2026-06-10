@@ -4,6 +4,9 @@ import { m } from 'foldkit/message'
 import { Workflow } from '../../domain'
 
 export const ClickedSelectedWorkflow = m('ClickedSelectedWorkflow')
+export const ClickedToggledActionMenu = m('ClickedToggledActionMenu')
+export const ClickedSavedPreviewLocal = m('ClickedSavedPreviewLocal')
+export const ClickedUndidFlowChanges = m('ClickedUndidFlowChanges')
 export const SelectedStatus = m('SelectedStatus', { statusId: S.String })
 export const UpdatedStatusName = m('UpdatedStatusName', {
   statusId: S.String,
@@ -28,6 +31,14 @@ export const UpdatedTransitionLabel = m('UpdatedTransitionLabel', {
   transitionId: S.String,
   value: S.String,
 })
+export const UpdatedTransitionSortOrder = m('UpdatedTransitionSortOrder', {
+  transitionId: S.String,
+  value: S.String,
+})
+export const ClickedToggledTransitionRole = m('ClickedToggledTransitionRole', {
+  transitionId: S.String,
+  roleId: S.String,
+})
 export const SelectedTransitionFromStatus = m('SelectedTransitionFromStatus', {
   transitionId: S.String,
   statusId: S.String,
@@ -41,35 +52,24 @@ export const ClickedToggledTransitionApproval = m(
   { transitionId: S.String },
 )
 export const ClickedAddedTransition = m('ClickedAddedTransition')
-export const ClickedAddedApprovalRule = m('ClickedAddedApprovalRule', {
+export const ClickedDeletedTransition = m('ClickedDeletedTransition', {
   transitionId: S.String,
-  roleId: S.String,
+})
+export const ClickedAddedApprovalRule = m('ClickedAddedApprovalRule', {
+  statusId: S.String,
 })
 export const SelectedApprovalRuleRole = m('SelectedApprovalRuleRole', {
-  transitionId: S.String,
+  statusId: S.String,
   ruleId: S.String,
   roleId: S.String,
 })
 export const UpdatedApprovalRuleMinAmount = m('UpdatedApprovalRuleMinAmount', {
-  transitionId: S.String,
+  statusId: S.String,
   ruleId: S.String,
   value: S.String,
 })
-export const UpdatedApprovalRuleMaxAmount = m('UpdatedApprovalRuleMaxAmount', {
-  transitionId: S.String,
-  ruleId: S.String,
-  value: S.String,
-})
-export const UpdatedApprovalRuleRequiredCount = m(
-  'UpdatedApprovalRuleRequiredCount',
-  {
-    transitionId: S.String,
-    ruleId: S.String,
-    value: S.String,
-  },
-)
 export const ClickedRemovedApprovalRule = m('ClickedRemovedApprovalRule', {
-  transitionId: S.String,
+  statusId: S.String,
   ruleId: S.String,
 })
 export const ClickedAddedTransitionEffect = m('ClickedAddedTransitionEffect', {
@@ -109,10 +109,36 @@ export const ClickedZoomedGraphIn = m('ClickedZoomedGraphIn')
 export const ClickedZoomedGraphOut = m('ClickedZoomedGraphOut')
 export const ClickedResetGraphViewport = m('ClickedResetGraphViewport')
 export const ClickedResetWorkspace = m('ClickedResetWorkspace')
+export const ClickedLoadedRemoteFlowDefinitions = m(
+  'ClickedLoadedRemoteFlowDefinitions',
+)
+export const ClickedSavedRemoteFlowDraft = m('ClickedSavedRemoteFlowDraft')
+export const ClickedPublishedRemoteFlow = m('ClickedPublishedRemoteFlow')
 export const CompletedSaveWorkspace = m('CompletedSaveWorkspace')
+export const SucceededLoadFlowDefinitions = m('SucceededLoadFlowDefinitions', {
+  definitions: S.Array(Workflow.WorkflowDefinition),
+})
+export const FailedLoadFlowDefinitions = m('FailedLoadFlowDefinitions', {
+  error: S.String,
+})
+export const SucceededSaveFlowDraft = m('SucceededSaveFlowDraft', {
+  workflow: Workflow.WorkflowDefinition,
+})
+export const FailedSaveFlowDraft = m('FailedSaveFlowDraft', {
+  error: S.String,
+})
+export const SucceededPublishFlow = m('SucceededPublishFlow', {
+  workflow: Workflow.WorkflowDefinition,
+})
+export const FailedPublishFlow = m('FailedPublishFlow', {
+  error: S.String,
+})
 
 export const Message = S.Union([
   ClickedSelectedWorkflow,
+  ClickedToggledActionMenu,
+  ClickedSavedPreviewLocal,
+  ClickedUndidFlowChanges,
   SelectedStatus,
   UpdatedStatusName,
   SelectedStatusType,
@@ -121,15 +147,16 @@ export const Message = S.Union([
   ClickedDeletedStatus,
   SelectedTransition,
   UpdatedTransitionLabel,
+  UpdatedTransitionSortOrder,
+  ClickedToggledTransitionRole,
   SelectedTransitionFromStatus,
   SelectedTransitionToStatus,
   ClickedToggledTransitionApproval,
   ClickedAddedTransition,
+  ClickedDeletedTransition,
   ClickedAddedApprovalRule,
   SelectedApprovalRuleRole,
   UpdatedApprovalRuleMinAmount,
-  UpdatedApprovalRuleMaxAmount,
-  UpdatedApprovalRuleRequiredCount,
   ClickedRemovedApprovalRule,
   ClickedAddedTransitionEffect,
   ClickedRemovedTransitionEffect,
@@ -145,6 +172,15 @@ export const Message = S.Union([
   ClickedZoomedGraphOut,
   ClickedResetGraphViewport,
   ClickedResetWorkspace,
+  ClickedLoadedRemoteFlowDefinitions,
+  ClickedSavedRemoteFlowDraft,
+  ClickedPublishedRemoteFlow,
   CompletedSaveWorkspace,
+  SucceededLoadFlowDefinitions,
+  FailedLoadFlowDefinitions,
+  SucceededSaveFlowDraft,
+  FailedSaveFlowDraft,
+  SucceededPublishFlow,
+  FailedPublishFlow,
 ])
 export type Message = typeof Message.Type

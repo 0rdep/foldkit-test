@@ -7,6 +7,7 @@ import { STORAGE_KEY } from './constant'
 import { Message } from './message'
 import { Model } from './model'
 import { Workspace } from './page'
+import { LoadFlowDefinitions } from './page/workspace/command'
 import { subscriptions } from './subscription'
 import { resetModel, update } from './update'
 import { view } from './view'
@@ -37,7 +38,10 @@ export const flags: Effect.Effect<Flags> = Effect.gen(function* () {
 // INIT
 
 export const init: Runtime.ProgramInit<Model, Message, Flags> = flags => {
-  return [{ workspace: Workspace.init(flags.maybeSavedWorkspace) }, []]
+  return [
+    { workspace: Workspace.init(flags.maybeSavedWorkspace) },
+    [LoadFlowDefinitions({ documentType: 'requisition' })],
+  ]
 }
 
 export const defaultModel = (): Model => resetModel()

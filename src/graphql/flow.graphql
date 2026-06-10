@@ -1,0 +1,113 @@
+fragment FlowDefinitionFields on FlowDefinition {
+  id
+  companyId
+  documentType
+  name
+  version
+  state
+  initialStatusId
+  statuses {
+    id
+    name
+    kind
+    editableFields
+    approval {
+      allowSelfApproval
+      onRejectedTransitionId
+      rules {
+        id
+        minAmount
+        onApprovedTransitionId
+        approvers {
+          type
+          userId
+          roleId
+        }
+      }
+    }
+  }
+  transitions {
+    id
+    label
+    fromStatusId
+    toStatusId
+    allowedRoles
+    requiresComment
+    sortOrder
+  }
+}
+
+fragment FlowRuntimeStateFields on FlowRuntimeState {
+  documentId
+  documentType
+  flowId
+  flowVersion
+  currentStatus {
+    id
+    name
+    kind
+    editableFields
+    approval {
+      allowSelfApproval
+      onRejectedTransitionId
+      rules {
+        id
+        minAmount
+        onApprovedTransitionId
+        approvers {
+          type
+          userId
+          roleId
+        }
+      }
+    }
+  }
+  editPolicy {
+    editableFields
+    editableItemIds
+    canDelete
+    canDuplicate
+  }
+  availableTransitions {
+    id
+    label
+    toStatusId
+    toStatusName
+  }
+  blockedTransitions {
+    id
+    label
+    reason
+  }
+  pendingApproval {
+    statusId
+    approvalRuleId
+    recordedApprovals
+    canCurrentUserApprove
+    canCurrentUserReject
+  }
+}
+
+query FlowDefinitions($documentType: FlowDocumentType) {
+  Flow {
+    definitions(documentType: $documentType) {
+      ...FlowDefinitionFields
+    }
+  }
+}
+
+query RequisitionFlowState($requisitionId: Int!) {
+  Flow {
+    requisitionState(requisitionId: $requisitionId) {
+      ...FlowRuntimeStateFields
+    }
+  }
+}
+
+query OrderFlowState($orderId: Int!) {
+  Flow {
+    orderState(orderId: $orderId) {
+      ...FlowRuntimeStateFields
+    }
+  }
+}

@@ -6,12 +6,14 @@ import { update } from './update'
 import { view } from './view/index'
 
 describe('workflow scene', () => {
-  test('renders workflow builder sections', () => {
+  test('renders embedded workflow canvas controls', () => {
     Scene.scene(
       { update, view },
       Scene.with(defaultModel()),
-      Scene.expect(Scene.role('heading', { name: 'Workflow Map' })).toExist(),
-      Scene.expect(Scene.role('heading', { name: 'Validation' })).toExist(),
+      Scene.expect(Scene.role('region', { name: 'Workflow canvas' })).toExist(),
+      Scene.expect(Scene.role('button', { name: 'Menu' })).toExist(),
+      Scene.expect(Scene.role('button', { name: 'Reset view' })).toExist(),
+      Scene.expect(Scene.role('heading', { name: 'Validation' })).toBeAbsent(),
       Scene.expect(
         Scene.role('heading', { name: 'Workflow Summary' }),
       ).toBeAbsent(),
@@ -26,7 +28,7 @@ describe('workflow scene', () => {
     Scene.scene(
       { update, view },
       Scene.with(defaultModel()),
-      Scene.click(Scene.role('button', { name: /Waiting Manager Approval/ })),
+      Scene.click(Scene.role('button', { name: /Pending Approval/ })),
       Scene.expect(
         Scene.role('heading', { name: 'Status Inspector' }),
       ).toExist(),
@@ -37,7 +39,7 @@ describe('workflow scene', () => {
     Scene.scene(
       { update, view },
       Scene.with(defaultModel()),
-      Scene.click(Scene.role('button', { name: /Waiting Manager Approval/ })),
+      Scene.click(Scene.role('button', { name: /Pending Approval/ })),
       Scene.expect(
         Scene.role('heading', { name: 'Status Inspector' }),
       ).toExist(),
@@ -52,8 +54,8 @@ describe('workflow scene', () => {
     Scene.scene(
       { update, view },
       Scene.with(defaultModel()),
-      Scene.expect(Scene.text('Waiting Manager Approval')).toExist(),
-      Scene.expect(Scene.text('Finance Review')).toExist(),
+      Scene.expect(Scene.text('Pending Approval')).toExist(),
+      Scene.expect(Scene.text('Approved')).toExist(),
       Scene.expect(
         Scene.role('button', { name: 'Submit for approval' }),
       ).toExist(),

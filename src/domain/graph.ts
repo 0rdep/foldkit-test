@@ -10,6 +10,10 @@ const paddingX = 160
 const paddingY = 280
 const cornerRadius = 36
 const backEdgeLaneGap = 68
+const edgeLaneGap = 22
+const edgeFanOutDistance = 92
+const edgeFanOutLaneStep = 24
+const edgeRightOverflowPadding = 72
 
 export type GraphNode = Readonly<{
   status: Workflow.Status
@@ -164,6 +168,25 @@ const roundedForwardPath = (
   return `M ${startX} ${startY} H ${midX - radius} Q ${midX} ${startY}, ${midX} ${startY + directionY * radius} V ${endY - directionY * radius} Q ${midX} ${endY}, ${midX + radius} ${endY} H ${endX}`
 }
 
+const roundedForwardLanePath = (
+  startX: number,
+  centerStartY: number,
+  sourceLaneY: number,
+  endX: number,
+  endY: number,
+  sourceLaneIndex: number,
+): string => {
+  if (centerStartY === sourceLaneY) {
+    return roundedForwardPath(startX, centerStartY, endX, endY)
+  }
+
+  const fanOutDistance = edgeFanOutDistance + sourceLaneIndex * edgeFanOutLaneStep
+  const fanOutX = startX + fanOutDistance
+  const remainingPath = roundedForwardPath(fanOutX, sourceLaneY, endX, endY)
+
+  return `M ${startX} ${centerStartY} C ${startX + fanOutDistance * 0.28} ${centerStartY}, ${startX + fanOutDistance * 0.72} ${sourceLaneY}, ${fanOutX} ${sourceLaneY} ${remainingPath.replace(`M ${fanOutX} ${sourceLaneY}`, '')}`
+}
+
 const roundedBackPath = (
   startX: number,
   startY: number,
@@ -182,25 +205,65 @@ const roundedBackPath = (
   return `M ${startX} ${startY} H ${sourceTurnX - radius} Q ${sourceTurnX} ${startY}, ${sourceTurnX} ${startY - radius} V ${laneY + radius} Q ${sourceTurnX} ${laneY}, ${sourceTurnX - radius} ${laneY} H ${targetTurnX + radius} Q ${targetTurnX} ${laneY}, ${targetTurnX} ${laneY + radius} V ${endY - radius} Q ${targetTurnX} ${endY}, ${targetTurnX + radius} ${endY} H ${endX}`
 }
 
+const roundedBackLanePath = (
+  startX: number,
+  centerStartY: number,
+  sourceLaneY: number,
+  endX: number,
+  endY: number,
+  laneY: number,
+  sourceLaneIndex: number,
+): string => {
+  if (centerStartY === sourceLaneY) {
+    return roundedBackPath(startX, centerStartY, endX, endY, laneY)
+  }
+
+  const fanOutDistance = edgeFanOutDistance + sourceLaneIndex * edgeFanOutLaneStep
+  const fanOutX = startX + fanOutDistance
+  const remainingPath = roundedBackPath(fanOutX, sourceLaneY, endX, endY, laneY)
+
+  return `M ${startX} ${centerStartY} C ${startX + fanOutDistance * 0.28} ${centerStartY}, ${startX + fanOutDistance * 0.72} ${sourceLaneY}, ${fanOutX} ${sourceLaneY} ${remainingPath.replace(`M ${fanOutX} ${sourceLaneY}`, '')}`
+}
+
 const edgePath = (
   from: GraphNode,
   to: GraphNode,
   backEdgeLaneIndex: number,
+  sourceLaneOffset: number,
+  targetLaneOffset: number,
+  sourceLaneIndex: number,
 ): string => {
   if (isBackEdge(from, to)) {
     const startX = from.x + from.width
-    const startY = from.y + from.height / 2
+    const centerStartY = from.y + from.height / 2
+    const sourceLaneY = centerStartY + sourceLaneOffset
     const endX = to.x
-    const endY = to.y + to.height / 2
+    const endY = to.y + to.height / 2 + targetLaneOffset
     const laneY = backEdgeLaneY(from, to, backEdgeLaneIndex)
-    return roundedBackPath(startX, startY, endX, endY, laneY)
+    return roundedBackLanePath(
+      startX,
+      centerStartY,
+      sourceLaneY,
+      endX,
+      endY,
+      laneY,
+      sourceLaneIndex,
+    )
   }
 
   const startX = from.x + from.width
-  const startY = from.y + from.height / 2
+  const centerStartY = from.y + from.height / 2
+  const sourceLaneY = centerStartY + sourceLaneOffset
   const endX = to.x
-  const endY = to.y + to.height / 2
-  return roundedForwardPath(startX, startY, endX, endY)
+  const endY = to.y + to.height / 2 + targetLaneOffset
+  return roundedForwardLanePath(
+    startX,
+    centerStartY,
+    sourceLaneY,
+    endX,
+    endY,
+    sourceLaneIndex,
+  )
 }
 
 const edgeLabelX = (from: GraphNode, to: GraphNode): number => {
@@ -214,6 +277,8 @@ const edgeLabelY = (
   from: GraphNode,
   to: GraphNode,
   backEdgeLaneIndex: number,
+  sourceLaneOffset: number,
+  targetLaneOffset: number,
 ): number => {
   if (isBackEdge(from, to)) {
     return backEdgeLaneY(from, to, backEdgeLaneIndex)
@@ -221,7 +286,12 @@ const edgeLabelY = (
   return (
     from.y +
     from.height / 2 +
-    (to.y + to.height / 2 - (from.y + from.height / 2)) / 2
+    sourceLaneOffset +
+    (to.y +
+      to.height / 2 +
+      targetLaneOffset -
+      (from.y + from.height / 2 + sourceLaneOffset)) /
+      2
   )
 }
 
@@ -251,6 +321,61 @@ const backEdgeLaneIndex = (
         ),
     ),
   ).length
+
+const centeredLaneOffset = (laneIndex: number, laneCount: number): number =>
+  (laneIndex - (laneCount - 1) / 2) * edgeLaneGap
+
+const outgoingLaneOffset = (
+  transitions: ReadonlyArray<Workflow.Transition>,
+  transition: Workflow.Transition,
+  transitionIndex: number,
+): number => {
+  const outgoingTransitions = Array.filter(
+    transitions,
+    item => item.fromStatusId === transition.fromStatusId,
+  )
+  const laneIndex = pipe(
+    transitions.slice(0, transitionIndex),
+    Array.filter(item => item.fromStatusId === transition.fromStatusId),
+  ).length
+
+  return centeredLaneOffset(laneIndex, outgoingTransitions.length)
+}
+
+const outgoingLaneIndex = (
+  transitions: ReadonlyArray<Workflow.Transition>,
+  transition: Workflow.Transition,
+  transitionIndex: number,
+): number =>
+  pipe(
+    transitions.slice(0, transitionIndex),
+    Array.filter(item => item.fromStatusId === transition.fromStatusId),
+  ).length
+
+const incomingLaneOffset = (
+  transitions: ReadonlyArray<Workflow.Transition>,
+  transition: Workflow.Transition,
+  transitionIndex: number,
+): number => {
+  const incoming = Array.filter(
+    transitions,
+    item => item.toStatusId === transition.toStatusId,
+  )
+  const laneIndex = pipe(
+    transitions.slice(0, transitionIndex),
+    Array.filter(item => item.toStatusId === transition.toStatusId),
+  ).length
+
+  return centeredLaneOffset(laneIndex, incoming.length)
+}
+
+const maxEdgeX = (edge: GraphEdge): number => {
+  if (edge.isBackEdge) {
+    return edge.from.x + edge.from.width + edgeFanOutDistance + edgeFanOutLaneStep * 8 + 120
+  }
+
+  return Math.max(edge.from.x + edge.from.width, edge.to.x)
+}
 
 export const layout = (workflow: Workflow.WorkflowDefinition): GraphLayout => {
   const depths = Array.map(workflow.statuses, status => ({
@@ -297,15 +422,43 @@ export const layout = (workflow: Workflow.WorkflowDefinition): GraphLayout => {
               transition,
               transitionIndex,
             )
+            const sourceLaneOffset = outgoingLaneOffset(
+              workflow.transitions,
+              transition,
+              transitionIndex,
+            )
+            const sourceLaneIndex = outgoingLaneIndex(
+              workflow.transitions,
+              transition,
+              transitionIndex,
+            )
+            const targetLaneOffset = incomingLaneOffset(
+              workflow.transitions,
+              transition,
+              transitionIndex,
+            )
 
             return [
               {
                 transition,
                 from,
                 to,
-                path: edgePath(from, to, laneIndex),
+                path: edgePath(
+                  from,
+                  to,
+                  laneIndex,
+                  sourceLaneOffset,
+                  targetLaneOffset,
+                  sourceLaneIndex,
+                ),
                 labelX: edgeLabelX(from, to),
-                labelY: edgeLabelY(from, to, laneIndex),
+                labelY: edgeLabelY(
+                  from,
+                  to,
+                  laneIndex,
+                  sourceLaneOffset,
+                  targetLaneOffset,
+                ),
                 isBackEdge: isBackEdge(from, to),
               },
             ]
@@ -315,13 +468,17 @@ export const layout = (workflow: Workflow.WorkflowDefinition): GraphLayout => {
     ),
   )
 
-  const maxX = Math.max(...Array.map(nodes, node => node.x + node.width), 0)
+  const maxX = Math.max(
+    ...Array.map(nodes, node => node.x + node.width),
+    ...Array.map(edges, maxEdgeX),
+    0,
+  )
   const maxY = Math.max(...Array.map(nodes, node => node.y + node.height), 0)
 
   return {
     nodes,
     edges,
-    width: maxX + paddingX,
+    width: maxX + paddingX + edgeRightOverflowPadding,
     height: maxY + paddingY,
   }
 }

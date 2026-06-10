@@ -47,11 +47,15 @@ export const fromSavedWorkspace = ({
     graphPanY: 0,
     graphZoom: 1,
     graphPanState: GraphPanIdle(),
+    isActionMenuOpen: false,
+    isPreviewSaved: false,
+    isDirty: false,
+    undoStack: [],
     selectedActorId,
     selectedDocumentId,
     lastRequestJson: MockBackend.formatRequest(exchange),
     lastResponseJson: MockBackend.formatResponse(exchange),
-    banner: 'Workspace loaded from localStorage',
+    banner: '',
   }
 }
 
