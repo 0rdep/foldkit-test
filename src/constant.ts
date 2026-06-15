@@ -29,19 +29,13 @@ export const DEFAULT_WORKFLOW: Workflow.WorkflowDefinition = {
       editPolicy: Workflow.approvalEditPolicy,
       approval: {
         allowSelfApproval: true,
-        onRejectedTransitionId: 'pending-approval-to-rejected',
+        approvedTransitionId: 'pending-approval-to-approved',
+        rejectedTransitionId: 'pending-approval-to-rejected',
         rules: [
           {
             id: 'approval-standard-amount',
             minAmount: 1,
             roleId: 'OrderModerator',
-            onApprovedTransitionId: 'pending-approval-to-approved',
-          },
-          {
-            id: 'approval-high-amount',
-            minAmount: 10000,
-            roleId: 'OrderModerator',
-            onApprovedTransitionId: 'pending-approval-to-approved',
           },
         ],
       },
@@ -125,7 +119,7 @@ export const DEFAULT_WORKFLOW: Workflow.WorkflowDefinition = {
       fromStatusId: 'PENDING_APPROVAL',
       toStatusId: 'REJECTED',
       label: 'Reject',
-      allowedRoles: ['OrderModerator', 'OrderModeratorLimited', 'SystemAdmin'],
+      allowedRoles: ['OrderCreator', 'OrderModerator', 'OrderModeratorLimited', 'SystemAdmin'],
       requiresComment: false,
       sortOrder: 'b1',
       effects: [
@@ -135,16 +129,6 @@ export const DEFAULT_WORKFLOW: Workflow.WorkflowDefinition = {
           label: 'Notify requester about rejection',
         },
       ],
-    },
-    {
-      id: 'pending-approval-to-cancelled',
-      fromStatusId: 'PENDING_APPROVAL',
-      toStatusId: 'CANCELLED',
-      label: 'Cancel',
-      allowedRoles: ['OrderCreator', 'OrderModerator', 'OrderModeratorLimited', 'SystemAdmin'],
-      requiresComment: false,
-      sortOrder: 'b2',
-      effects: [],
     },
     {
       id: 'approved-to-cancelled',

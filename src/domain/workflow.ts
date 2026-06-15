@@ -32,13 +32,13 @@ export const ApprovalRule = S.Struct({
   id: S.String,
   minAmount: S.Number,
   roleId: S.String,
-  onApprovedTransitionId: S.String,
 })
 export type ApprovalRule = typeof ApprovalRule.Type
 
 export const ApprovalConfig = S.Struct({
   rules: S.Array(ApprovalRule),
-  onRejectedTransitionId: S.String,
+  approvedTransitionId: S.String,
+  rejectedTransitionId: S.String,
   allowSelfApproval: S.Boolean,
 })
 export type ApprovalConfig = typeof ApprovalConfig.Type
@@ -319,25 +319,42 @@ const alreadyApproved = (
     Array.some(approval => approval.actorId === actorId),
   )
 
-const isTransitionApprovalComplete = (
+const isApprovalRuleComplete = (
   rule: ApprovalRule,
   approvals: ReadonlyArray<ApprovalRecord>,
 ): boolean => {
   return approvalsForRule(approvals, rule.id).length > 0
 }
 
-const matchingApprovalRuleForTransition = (
+const isApprovedOutputTransition = (
   status: Status,
-  document: DocumentInstance,
   transition: Transition,
-): Option.Option<ApprovalRule> => {
-  if (status.approval === undefined) {
-    return Option.none()
-  }
+): boolean => status.approval?.approvedTransitionId === transition.id
 
+const nextApprovableRule = (
+  approval: ApprovalConfig,
+  document: DocumentInstance,
+  statusId: string,
+  actor: Actor,
+): Option.Option<ApprovalRule> =>
+  pipe(
+    matchingRules(approval, document.amount),
+    Array.findFirst(
+      rule =>
+        canActorApproveRule(actor, rule) &&
+        !isApprovalRuleComplete(rule, approvalsForStatus(document, statusId)),
+    ),
+  )
+
+const areMatchingApprovalRulesComplete = (
+  approval: ApprovalConfig,
+  document: DocumentInstance,
+  statusId: string,
+): boolean => {
+  const approvals = approvalsForStatus(document, statusId)
   return pipe(
-    matchingRules(status.approval, document.amount),
-    Array.findFirst(rule => rule.onApprovedTransitionId === transition.id),
+    matchingRules(approval, document.amount),
+    Array.every(rule => isApprovalRuleComplete(rule, approvals)),
   )
 }
 
@@ -398,13 +415,7 @@ export const runtimeState = (
         onSome: status => status.name,
       })
 
-      const maybeApprovalRule = matchingApprovalRuleForTransition(
-        currentStatus,
-        document,
-        transition,
-      )
-
-      if (Option.isNone(maybeApprovalRule)) {
+      if (!isApprovedOutputTransition(currentStatus, transition)) {
         return [
           {
             id: transition.id,
@@ -414,10 +425,11 @@ export const runtimeState = (
         ]
       }
 
-      const rule = maybeApprovalRule.value
-      const canApprove = canActorApproveRule(actor, rule)
+      const maybeRule = currentStatus.approval
+        ? nextApprovableRule(currentStatus.approval, document, currentStatus.id, actor)
+        : Option.none()
 
-      if (!canApprove || alreadyApproved(document, currentStatus.id, actor.id)) {
+      if (Option.isNone(maybeRule) || alreadyApproved(document, currentStatus.id, actor.id)) {
         return []
       }
 
@@ -447,17 +459,13 @@ export const runtimeState = (
         ]
       }
 
-      const maybeApprovalRule = matchingApprovalRuleForTransition(
-        currentStatus,
-        document,
-        transition,
-      )
-
-      if (Option.isNone(maybeApprovalRule)) {
+      if (!isApprovedOutputTransition(currentStatus, transition)) {
         return []
       }
 
-      const rule = maybeApprovalRule.value
+      const maybeRule = currentStatus.approval
+        ? nextApprovableRule(currentStatus.approval, document, currentStatus.id, actor)
+        : Option.none()
 
       if (alreadyApproved(document, currentStatus.id, actor.id)) {
         return [
@@ -469,17 +477,30 @@ export const runtimeState = (
         ]
       }
 
-      const requiredRoles = roleLabel(rule.roleId)
-      const canApprove = canActorApproveRule(actor, rule)
+      if (Option.isNone(maybeRule)) {
+        const maybeRequiredRule = currentStatus.approval
+          ? pipe(
+              matchingRules(currentStatus.approval, document.amount),
+              Array.findFirst(
+                rule =>
+                  !isApprovalRuleComplete(
+                    rule,
+                    approvalsForStatus(document, currentStatus.id),
+                  ),
+              ),
+            )
+          : Option.none()
 
-      if (!canApprove) {
-        return [
-          {
-            id: transition.id,
-            label: transition.label,
-            reason: `Requires ${requiredRoles}`,
-          },
-        ]
+        return Option.match(maybeRequiredRule, {
+          onNone: () => [],
+          onSome: rule => [
+            {
+              id: transition.id,
+              label: transition.label,
+              reason: `Requires ${roleLabel(rule.roleId)}`,
+            },
+          ],
+        })
       }
 
       return []
@@ -577,6 +598,7 @@ export const requestTransition = (
           name: document.currentStatusId,
           type: 'normal' as const,
           editPolicy: lockedEditPolicy,
+          approval: undefined,
         }),
       )
 
@@ -589,17 +611,13 @@ export const requestTransition = (
         }
       }
 
-      const maybeApprovalRule = matchingApprovalRuleForTransition(
-        currentStatus,
-        document,
-        transition,
-      )
-
-      if (Option.isNone(maybeApprovalRule)) {
+      if (!isApprovedOutputTransition(currentStatus, transition)) {
         return completeTransition(document, transition, actor, idPrefix)
       }
 
-      const rule = maybeApprovalRule.value
+      if (currentStatus.approval === undefined) {
+        return completeTransition(document, transition, actor, idPrefix)
+      }
 
       if (alreadyApproved(document, currentStatus.id, actor.id)) {
         return {
@@ -610,7 +628,14 @@ export const requestTransition = (
         }
       }
 
-      if (!canActorApproveRule(actor, rule)) {
+      const maybeRule = nextApprovableRule(
+        currentStatus.approval,
+        document,
+        currentStatus.id,
+        actor,
+      )
+
+      if (Option.isNone(maybeRule)) {
         return {
           document,
           result: 'blocked',
@@ -619,43 +644,42 @@ export const requestTransition = (
         }
       }
 
-          const nextApproval: ApprovalRecord = {
-            id: `${idPrefix}-approval`,
-            statusId: currentStatus.id,
-            approvalRuleId: rule.id,
-            actorId: actor.id,
-            roleId: rule.roleId,
-          }
-          const approvals = [...document.approvals, nextApproval]
-          const isComplete = isTransitionApprovalComplete(
-            rule,
-            approvalsForStatus(
-              evo(document, { approvals: () => approvals }),
-              currentStatus.id,
-            ),
-          )
+      const rule = maybeRule.value
+      const nextApproval: ApprovalRecord = {
+        id: `${idPrefix}-approval`,
+        statusId: currentStatus.id,
+        approvalRuleId: rule.id,
+        actorId: actor.id,
+        roleId: rule.roleId,
+      }
+      const approvals = [...document.approvals, nextApproval]
+      const approvedDocument = appendEvent(
+        evo(document, { approvals: () => approvals }),
+        idPrefix,
+        `${actor.name} approved ${transition.label}`,
+      )
 
-          const approvedDocument = appendEvent(
-            evo(document, { approvals: () => approvals }),
-            idPrefix,
-            `${actor.name} approved ${transition.label}`,
-          )
+      if (
+        areMatchingApprovalRulesComplete(
+          currentStatus.approval,
+          approvedDocument,
+          currentStatus.id,
+        )
+      ) {
+        return completeTransition(
+          approvedDocument,
+          transition,
+          actor,
+          `${idPrefix}-complete`,
+        )
+      }
 
-          if (isComplete) {
-            return completeTransition(
-              approvedDocument,
-              transition,
-              actor,
-              `${idPrefix}-complete`,
-            )
-          }
-
-          return {
-            document: approvedDocument,
-            result: 'approvalRecorded',
-            message: 'Approval recorded; waiting for more approvals',
-            emittedEffects: [],
-          }
+      return {
+        document: approvedDocument,
+        result: 'approvalRecorded',
+        message: 'Approval recorded; waiting for more approvals',
+        emittedEffects: [],
+      }
     },
   })
 
@@ -728,20 +752,45 @@ export const validateWorkflow = (
         return [`${status.name} is an approval status but has no approval rules`]
       }
 
-      return pipe(
-        status.approval.rules,
-        Array.flatMap(rule =>
-          Option.match(findTransition(workflow, rule.onApprovedTransitionId), {
-            onNone: () => [
-              `${status.name} approval rule has a missing approved transition`,
-            ],
-            onSome: transition =>
-              transition.fromStatusId === status.id
-                ? []
-                : [`${status.name} approval transition must start from itself`],
-          }),
-        ),
+      const outgoingTransitions = Array.filter(
+        workflow.transitions,
+        transition => transition.fromStatusId === status.id,
       )
+      const outputProblems =
+        outgoingTransitions.length === 2
+          ? []
+          : [`${status.name} approval status must have exactly two outputs`]
+      const approvedProblems = Option.match(
+        findTransition(workflow, status.approval.approvedTransitionId),
+        {
+          onNone: () => [`${status.name} approval status has a missing approved transition`],
+          onSome: transition =>
+            transition.fromStatusId === status.id
+              ? []
+              : [`${status.name} approved transition must start from itself`],
+        },
+      )
+      const rejectedProblems = Option.match(
+        findTransition(workflow, status.approval.rejectedTransitionId),
+        {
+          onNone: () => [`${status.name} approval status has a missing rejected transition`],
+          onSome: transition =>
+            transition.fromStatusId === status.id
+              ? []
+              : [`${status.name} rejected transition must start from itself`],
+        },
+      )
+      const duplicateOutputProblems =
+        status.approval.approvedTransitionId === status.approval.rejectedTransitionId
+          ? [`${status.name} approval outputs must be distinct`]
+          : []
+
+      return [
+        ...outputProblems,
+        ...approvedProblems,
+        ...rejectedProblems,
+        ...duplicateOutputProblems,
+      ]
     }),
   )
 

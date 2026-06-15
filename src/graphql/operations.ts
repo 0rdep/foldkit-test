@@ -22,11 +22,11 @@ fragment FlowDefinitionFields on FlowDefinition {
     editableFields
     approval {
       allowSelfApproval
-      onRejectedTransitionId
+      approvedTransitionId
+      rejectedTransitionId
       rules {
         id
         minAmount
-        onApprovedTransitionId
         approvers {
           type
           userId
@@ -71,11 +71,11 @@ fragment FlowDefinitionFields on FlowDefinition {
     editableFields
     approval {
       allowSelfApproval
-      onRejectedTransitionId
+      approvedTransitionId
+      rejectedTransitionId
       rules {
         id
         minAmount
-        onApprovedTransitionId
         approvers {
           type
           userId
@@ -120,11 +120,11 @@ fragment FlowDefinitionFields on FlowDefinition {
     editableFields
     approval {
       allowSelfApproval
-      onRejectedTransitionId
+      approvedTransitionId
+      rejectedTransitionId
       rules {
         id
         minAmount
-        onApprovedTransitionId
         approvers {
           type
           userId

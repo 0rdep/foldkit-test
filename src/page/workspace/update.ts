@@ -2,7 +2,6 @@ import { Array, Match as M, Option, pipe } from 'effect'
 import { Command } from 'foldkit'
 import { evo } from 'foldkit/struct'
 
-import { LoadFlowDefinitions, PublishFlow, SaveFlowDraft, SaveWorkspace } from './command'
 import {
   DEFAULT_ACTORS,
   DEFAULT_DOCUMENTS,
@@ -10,9 +9,25 @@ import {
   DEFAULT_WORKFLOW,
 } from '../../constant'
 import { Workflow } from '../../domain'
-import { type Message } from './message'
 import * as MockBackend from '../../mockBackend'
-import { GraphPanIdle, GraphPanning, type Model } from './model'
+import {
+  LoadFlowDefinitions,
+  PublishFlow,
+  SaveFlowDraft,
+  SaveWorkspace,
+} from './command'
+import { type Message } from './message'
+import {
+  GraphCanvasContextMenu,
+  GraphContextMenuClosed,
+  GraphNodeContextMenu,
+  GraphPanIdle,
+  GraphPanning,
+  GraphTransitionContextMenu,
+  type Model,
+  TransitionDragIdle,
+  TransitionDragging,
+} from './model'
 
 type UpdateReturn = readonly [Model, ReadonlyArray<Command.Command<Message>>]
 const withUpdateReturn = M.withReturnType<UpdateReturn>()
@@ -30,6 +45,20 @@ const parseNumberInput = (value: string, fallback: number): number => {
 
 const clampGraphZoom = (zoom: number): number =>
   Math.min(maxGraphZoom, Math.max(minGraphZoom, zoom))
+
+const selectedItemExists = (
+  workflow: Workflow.WorkflowDefinition,
+  selectedItemKind: Model['selectedItemKind'],
+  selectedItemId: string,
+): boolean => {
+  if (selectedItemKind === 'Status') {
+    return Option.isSome(Workflow.findStatus(workflow, selectedItemId))
+  }
+  if (selectedItemKind === 'Transition') {
+    return Option.isSome(Workflow.findTransition(workflow, selectedItemId))
+  }
+  return true
+}
 
 const workspaceCommand = (model: Model): Command.Command<Message> =>
   SaveWorkspace({
@@ -73,6 +102,8 @@ const resetModel = (): Model =>
     graphPanY: 0,
     graphZoom: 1,
     graphPanState: GraphPanIdle(),
+    transitionDragState: TransitionDragIdle(),
+    graphContextMenuState: GraphContextMenuClosed(),
     isActionMenuOpen: false,
     isPreviewSaved: false,
     isDirty: false,
@@ -151,7 +182,7 @@ const updateApprovalRule = (
   ruleId: string,
   f: (rule: Workflow.ApprovalRule) => Workflow.ApprovalRule,
 ): Workflow.Status =>
-  evo(status, {
+  evo(statusWithApprovalField(status), {
     approval: approval => {
       if (approval === undefined) {
         return undefined
@@ -164,26 +195,36 @@ const updateApprovalRule = (
     },
   })
 
-const firstOutgoingTransitionId = (
+const statusWithApprovalField = (status: Workflow.Status): Workflow.Status =>
+  Workflow.Status.make({
+    id: status.id,
+    name: status.name,
+    type: status.type,
+    editPolicy: status.editPolicy,
+    approval: status.approval,
+  })
+
+const approvalOutputTransitionIds = (
   workflow: Workflow.WorkflowDefinition,
   statusId: string,
-): string =>
-  Option.match(
-    Array.findFirst(
-      workflow.transitions,
-      transition => transition.fromStatusId === statusId,
-    ),
-    {
-      onNone: () => '',
-      onSome: transition => transition.id,
-    },
+): { approvedTransitionId: string; rejectedTransitionId: string } => {
+  const outgoingTransitions = Array.filter(
+    workflow.transitions,
+    transition => transition.fromStatusId === statusId,
   )
+
+  return {
+    approvedTransitionId: outgoingTransitions[0]?.id ?? '',
+    rejectedTransitionId: outgoingTransitions[1]?.id ?? outgoingTransitions[0]?.id ?? '',
+  }
+}
 
 const nextStatus = (model: Model): Workflow.Status => ({
   id: `status-${model.nextSequence}`,
   name: `New status ${model.nextSequence}`,
   type: 'normal',
   editPolicy: Workflow.unlockedEditPolicy,
+  approval: undefined,
 })
 
 const nextTransition = (model: Model): Workflow.Transition => ({
@@ -196,6 +237,49 @@ const nextTransition = (model: Model): Workflow.Transition => ({
   sortOrder: `z${model.nextSequence}`,
   effects: [],
 })
+
+const nextTransitionBetween = (
+  model: Model,
+  fromStatusId: string,
+  toStatusId: string,
+): Workflow.Transition => ({
+  id: `transition-${model.nextSequence}`,
+  fromStatusId,
+  toStatusId,
+  label: `New transition ${model.nextSequence}`,
+  allowedRoles: ['OrderModerator', 'SystemAdmin'],
+  requiresComment: false,
+  sortOrder: `z${model.nextSequence}`,
+  effects: [],
+})
+
+const canCreateTransitionFromStatus = (status: Workflow.Status): boolean =>
+  status.type !== 'final'
+
+const canCreateTransitionToStatus = (status: Workflow.Status): boolean =>
+  status.type !== 'draft'
+
+const canCreateTransitionBetween = (
+  workflow: Workflow.WorkflowDefinition,
+  fromStatusId: string,
+  toStatusId: string,
+): boolean => {
+  if (fromStatusId === toStatusId) {
+    return false
+  }
+
+  return Option.match(
+    Option.all({
+      from: Workflow.findStatus(workflow, fromStatusId),
+      to: Workflow.findStatus(workflow, toStatusId),
+    }),
+    {
+      onNone: () => false,
+      onSome: ({ from, to }) =>
+        canCreateTransitionFromStatus(from) && canCreateTransitionToStatus(to),
+    },
+  )
+}
 
 const removeStatusFromWorkflow = (
   workflow: Workflow.WorkflowDefinition,
@@ -254,18 +338,24 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           selectedItemKind: () => 'Workflow',
           selectedItemId: () => '',
           isActionMenuOpen: () => false,
+          graphContextMenuState: () => GraphContextMenuClosed(),
+          transitionDragState: () => TransitionDragIdle(),
         }),
         [],
       ],
 
       ClickedToggledActionMenu: () => [
-        evo(model, { isActionMenuOpen: value => !value }),
+        evo(model, {
+          isActionMenuOpen: value => !value,
+          graphContextMenuState: () => GraphContextMenuClosed(),
+        }),
         [],
       ],
 
       ClickedSavedPreviewLocal: () => [
         evo(model, {
           isActionMenuOpen: () => false,
+          graphContextMenuState: () => GraphContextMenuClosed(),
           isPreviewSaved: () => true,
           isDirty: () => false,
           undoStack: () => [],
@@ -286,9 +376,24 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           refreshExchange(
             evo(model, {
               workflow: () => previousWorkflow,
-              selectedItemKind: () => 'Workflow',
-              selectedItemId: () => '',
+              selectedItemKind: selectedItemKind =>
+                selectedItemExists(
+                  previousWorkflow,
+                  selectedItemKind,
+                  model.selectedItemId,
+                )
+                  ? selectedItemKind
+                  : 'Workflow',
+              selectedItemId: selectedItemId =>
+                selectedItemExists(
+                  previousWorkflow,
+                  model.selectedItemKind,
+                  selectedItemId,
+                )
+                  ? selectedItemId
+                  : '',
               isActionMenuOpen: () => false,
+              graphContextMenuState: () => GraphContextMenuClosed(),
               isDirty: () => nextUndoStack.length > 0,
               isPreviewSaved: () => false,
               undoStack: () => nextUndoStack,
@@ -302,6 +407,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           selectedStatusId: () => statusId,
           selectedItemKind: () => 'Status',
           selectedItemId: () => statusId,
+          graphContextMenuState: () => GraphContextMenuClosed(),
         }),
         [],
       ],
@@ -323,7 +429,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           evo(model, {
             workflow: workflow =>
               Workflow.updateStatus(workflow, statusId, status =>
-                evo(status, {
+                evo(statusWithApprovalField(status), {
                   type: () => value,
                   approval: () => {
                     if (value !== 'approval') {
@@ -332,25 +438,27 @@ export const update = (model: Model, message: Message): UpdateReturn =>
                     if (status.approval !== undefined) {
                       return status.approval
                     }
+                    const approvalOutputs = approvalOutputTransitionIds(
+                      workflow,
+                      statusId,
+                    )
                     return {
                       allowSelfApproval: true,
-                      onRejectedTransitionId: '',
+                      approvedTransitionId: approvalOutputs.approvedTransitionId,
+                      rejectedTransitionId: approvalOutputs.rejectedTransitionId,
                       rules: [
                         {
                           id: `rule-${model.nextSequence}`,
                           minAmount: 1,
                           roleId: 'OrderModerator',
-                          onApprovedTransitionId: firstOutgoingTransitionId(
-                            workflow,
-                            statusId,
-                          ),
                         },
                       ],
                     }
                   },
                 }),
               ),
-            nextSequence: value === 'approval' ? value => value + 1 : value => value,
+            nextSequence:
+              value === 'approval' ? value => value + 1 : value => value,
             banner: () => 'Status behavior updated',
           }),
           model,
@@ -380,9 +488,8 @@ export const update = (model: Model, message: Message): UpdateReturn =>
                 statuses: statuses => [...statuses, status],
               }),
             selectedStatusId: () => status.id,
-            selectedItemKind: () => 'Status',
-            selectedItemId: () => status.id,
             isActionMenuOpen: () => false,
+            graphContextMenuState: () => GraphContextMenuClosed(),
             nextSequence: value => value + 1,
             banner: () => 'Status added',
           }),
@@ -420,6 +527,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
             selectedTransitionId: () => nextSelectedTransitionId,
             selectedItemKind: () => 'Workflow',
             selectedItemId: () => '',
+            graphContextMenuState: () => GraphContextMenuClosed(),
             banner: () => 'Status deleted. Connected transitions were removed.',
           }),
           model,
@@ -431,6 +539,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           selectedTransitionId: () => transitionId,
           selectedItemKind: () => 'Transition',
           selectedItemId: () => transitionId,
+          graphContextMenuState: () => GraphContextMenuClosed(),
         }),
         [],
       ],
@@ -511,9 +620,8 @@ export const update = (model: Model, message: Message): UpdateReturn =>
                 transitions: transitions => [...transitions, transition],
               }),
             selectedTransitionId: () => transition.id,
-            selectedItemKind: () => 'Transition',
-            selectedItemId: () => transition.id,
             isActionMenuOpen: () => false,
+            graphContextMenuState: () => GraphContextMenuClosed(),
             nextSequence: value => value + 1,
             banner: () => 'Transition added',
           }),
@@ -526,18 +634,30 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           model.workflow.transitions,
           transition => transition.id !== transitionId,
         )
-        const nextSelectedTransitionId = Option.match(Array.head(nextTransitions), {
-          onNone: () => '',
-          onSome: transition => transition.id,
-        })
+        const nextSelectedTransitionId = Option.match(
+          Array.head(nextTransitions),
+          {
+            onNone: () => '',
+            onSome: transition => transition.id,
+          },
+        )
 
         return saveFlowChange(
           evo(model, {
             workflow: workflow =>
               evo(workflow, { transitions: () => nextTransitions }),
             selectedTransitionId: () => nextSelectedTransitionId,
-            selectedItemKind: () => 'Workflow',
-            selectedItemId: () => '',
+            selectedItemKind: selectedItemKind =>
+              selectedItemKind === 'Transition' &&
+              model.selectedItemId === transitionId
+                ? 'Workflow'
+                : selectedItemKind,
+            selectedItemId: selectedItemId =>
+              model.selectedItemKind === 'Transition' &&
+              selectedItemId === transitionId
+                ? ''
+                : selectedItemId,
+            graphContextMenuState: () => GraphContextMenuClosed(),
             banner: () => 'Transition deleted',
           }),
           model,
@@ -549,14 +669,19 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           evo(model, {
             workflow: workflow =>
               Workflow.updateStatus(workflow, statusId, status => {
+                const approvalOutputs = approvalOutputTransitionIds(
+                  workflow,
+                  statusId,
+                )
                 const approval = status.approval ?? {
                   allowSelfApproval: true,
-                  onRejectedTransitionId: '',
+                  approvedTransitionId: approvalOutputs.approvedTransitionId,
+                  rejectedTransitionId: approvalOutputs.rejectedTransitionId,
                   rules: [],
                 }
                 const minAmount = nextApprovalRuleMinAmount(approval.rules)
 
-                return evo(status, {
+                return evo(statusWithApprovalField(status), {
                   type: () => 'approval',
                   approval: () =>
                     evo(approval, {
@@ -566,10 +691,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
                           id: `rule-${model.nextSequence}`,
                           minAmount,
                           roleId: 'OrderModerator',
-                          onApprovedTransitionId: firstOutgoingTransitionId(
-                            workflow,
-                            statusId,
-                          ),
                         },
                       ],
                     }),
@@ -616,7 +737,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           evo(model, {
             workflow: workflow =>
               Workflow.updateStatus(workflow, statusId, status =>
-                evo(status, {
+                evo(statusWithApprovalField(status), {
                   approval: approval => {
                     if (approval === undefined) {
                       return undefined
@@ -737,22 +858,67 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         )
       },
 
-      PressedGraphCanvas: ({ screenX, screenY }) => [
-        evo(model, {
-          selectedItemKind: () => 'Workflow',
-          selectedItemId: () => '',
-          graphPanState: () =>
-            GraphPanning({
-              startScreenX: screenX,
-              startScreenY: screenY,
-              startPanX: model.graphPanX,
-              startPanY: model.graphPanY,
-            }),
+      PressedGraphCanvas: ({ screenX, screenY }) => {
+        if (model.transitionDragState._tag === 'TransitionDragging') {
+          return [model, []]
+        }
+
+        return [
+          evo(model, {
+            graphPanState: () =>
+              GraphPanning({
+                startScreenX: screenX,
+                startScreenY: screenY,
+                startPanX: model.graphPanX,
+                startPanY: model.graphPanY,
+                didMove: false,
+              }),
+            graphContextMenuState: () => GraphContextMenuClosed(),
+          }),
+          [],
+        ]
+      },
+
+      PressedTransitionOutput: ({ statusId, screenX, screenY }) =>
+        Option.match(Workflow.findStatus(model.workflow, statusId), {
+          onNone: () => [model, []],
+          onSome: status =>
+            canCreateTransitionFromStatus(status)
+              ? [
+                  evo(model, {
+                    transitionDragState: () =>
+                      TransitionDragging({
+                        fromStatusId: statusId,
+                        startScreenX: screenX,
+                        startScreenY: screenY,
+                        currentScreenX: screenX,
+                        currentScreenY: screenY,
+                      }),
+                    graphPanState: () => GraphPanIdle(),
+                    isActionMenuOpen: () => false,
+                    graphContextMenuState: () => GraphContextMenuClosed(),
+                  }),
+                  [],
+                ]
+              : [model, []],
         }),
-        [],
-      ],
 
       MovedGraphCanvasPointer: ({ screenX, screenY }) => {
+        if (model.transitionDragState._tag === 'TransitionDragging') {
+          return [
+            evo(model, {
+              transitionDragState: transitionDragState =>
+                transitionDragState._tag === 'TransitionDragging'
+                  ? evo(transitionDragState, {
+                      currentScreenX: () => screenX,
+                      currentScreenY: () => screenY,
+                    })
+                  : transitionDragState,
+            }),
+            [],
+          ]
+        }
+
         if (model.graphPanState._tag !== 'GraphPanning') {
           return [model, []]
         }
@@ -765,13 +931,122 @@ export const update = (model: Model, message: Message): UpdateReturn =>
               graphPanState.startPanX + screenX - graphPanState.startScreenX,
             graphPanY: () =>
               graphPanState.startPanY + screenY - graphPanState.startScreenY,
+            graphPanState: () => evo(graphPanState, { didMove: () => true }),
           }),
           [],
         ]
       },
 
-      ReleasedGraphCanvasPointer: () => [
-        evo(model, { graphPanState: () => GraphPanIdle() }),
+      ReleasedGraphCanvasPointer: () => {
+        if (model.transitionDragState._tag === 'TransitionDragging') {
+          return [
+            evo(model, { transitionDragState: () => TransitionDragIdle() }),
+            [],
+          ]
+        }
+
+        return [
+          evo(model, {
+            selectedItemKind: selectedItemKind =>
+              model.graphPanState._tag === 'GraphPanning' &&
+              !model.graphPanState.didMove
+                ? 'Workflow'
+                : selectedItemKind,
+            selectedItemId: selectedItemId =>
+              model.graphPanState._tag === 'GraphPanning' &&
+              !model.graphPanState.didMove
+                ? ''
+                : selectedItemId,
+            graphPanState: () => GraphPanIdle(),
+          }),
+          [],
+        ]
+      },
+
+      ReleasedTransitionInput: ({ statusId }) => {
+        if (model.transitionDragState._tag !== 'TransitionDragging') {
+          return [model, []]
+        }
+
+        if (
+          !canCreateTransitionBetween(
+            model.workflow,
+            model.transitionDragState.fromStatusId,
+            statusId,
+          )
+        ) {
+          return [
+            evo(model, { transitionDragState: () => TransitionDragIdle() }),
+            [],
+          ]
+        }
+
+        const transition = nextTransitionBetween(
+          model,
+          model.transitionDragState.fromStatusId,
+          statusId,
+        )
+        const nextModel = evo(model, {
+          workflow: workflow =>
+            evo(workflow, {
+              transitions: transitions => [...transitions, transition],
+            }),
+          nextSequence: value => value + 1,
+          selectedTransitionId: () => transition.id,
+          transitionDragState: () => TransitionDragIdle(),
+          graphPanState: () => GraphPanIdle(),
+          isActionMenuOpen: () => false,
+          graphContextMenuState: () => GraphContextMenuClosed(),
+        })
+
+        return saveFlowChange(nextModel, model)
+      },
+
+      PressedGraphCanvasContextMenu: ({ clientX, clientY }) => [
+        evo(model, {
+          graphContextMenuState: () =>
+            GraphCanvasContextMenu({ clientX, clientY }),
+          graphPanState: () => GraphPanIdle(),
+          transitionDragState: () => TransitionDragIdle(),
+          isActionMenuOpen: () => false,
+        }),
+        [],
+      ],
+
+      PressedGraphNodeContextMenu: ({ statusId, clientX, clientY }) =>
+        Option.match(Workflow.findStatus(model.workflow, statusId), {
+          onNone: () => [model, []],
+          onSome: () => [
+            evo(model, {
+              graphContextMenuState: () =>
+                GraphNodeContextMenu({ statusId, clientX, clientY }),
+              graphPanState: () => GraphPanIdle(),
+              transitionDragState: () => TransitionDragIdle(),
+              isActionMenuOpen: () => false,
+            }),
+            [],
+          ],
+        }),
+
+      PressedGraphTransitionContextMenu: ({ transitionId, clientX, clientY }) =>
+        Option.match(Workflow.findTransition(model.workflow, transitionId), {
+          onNone: () => [model, []],
+          onSome: () => [
+            evo(model, {
+              graphContextMenuState: () =>
+                GraphTransitionContextMenu({ transitionId, clientX, clientY }),
+              graphPanState: () => GraphPanIdle(),
+              transitionDragState: () => TransitionDragIdle(),
+              isActionMenuOpen: () => false,
+            }),
+            [],
+          ],
+        }),
+
+      SuppressedNativeGraphContextMenu: () => [model, []],
+
+      ClickedClosedGraphContextMenu: () => [
+        evo(model, { graphContextMenuState: () => GraphContextMenuClosed() }),
         [],
       ],
 
@@ -805,6 +1080,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         evo(model, {
           banner: () => '',
           isActionMenuOpen: () => false,
+          graphContextMenuState: () => GraphContextMenuClosed(),
         }),
         [LoadFlowDefinitions({ documentType: 'requisition' })],
       ],
@@ -813,14 +1089,21 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         evo(model, {
           banner: () => '',
           isActionMenuOpen: () => false,
+          graphContextMenuState: () => GraphContextMenuClosed(),
         }),
-        [SaveFlowDraft({ flowId: model.workflow.id, workflow: model.workflow })],
+        [
+          SaveFlowDraft({
+            flowId: model.workflow.id,
+            workflow: model.workflow,
+          }),
+        ],
       ],
 
       ClickedPublishedRemoteFlow: () => [
         evo(model, {
           banner: () => '',
           isActionMenuOpen: () => false,
+          graphContextMenuState: () => GraphContextMenuClosed(),
         }),
         [PublishFlow({ flowId: model.workflow.id, workflow: model.workflow })],
       ],
@@ -844,6 +1127,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
                 selectedItemKind: () => 'Workflow',
                 selectedItemId: () => '',
                 isActionMenuOpen: () => false,
+                graphContextMenuState: () => GraphContextMenuClosed(),
                 isPreviewSaved: () => false,
                 isDirty: () => false,
                 undoStack: () => [],

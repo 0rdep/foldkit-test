@@ -21,9 +21,47 @@ export const GraphPanning = ts('GraphPanning', {
   startScreenY: S.Number,
   startPanX: S.Number,
   startPanY: S.Number,
+  didMove: S.Boolean,
 })
 export const GraphPanState = S.Union([GraphPanIdle, GraphPanning])
 export type GraphPanState = typeof GraphPanState.Type
+
+export const TransitionDragIdle = ts('TransitionDragIdle')
+export const TransitionDragging = ts('TransitionDragging', {
+  fromStatusId: S.String,
+  startScreenX: S.Number,
+  startScreenY: S.Number,
+  currentScreenX: S.Number,
+  currentScreenY: S.Number,
+})
+export const TransitionDragState = S.Union([
+  TransitionDragIdle,
+  TransitionDragging,
+])
+export type TransitionDragState = typeof TransitionDragState.Type
+
+export const GraphContextMenuClosed = ts('GraphContextMenuClosed')
+export const GraphCanvasContextMenu = ts('GraphCanvasContextMenu', {
+  clientX: S.Number,
+  clientY: S.Number,
+})
+export const GraphNodeContextMenu = ts('GraphNodeContextMenu', {
+  statusId: S.String,
+  clientX: S.Number,
+  clientY: S.Number,
+})
+export const GraphTransitionContextMenu = ts('GraphTransitionContextMenu', {
+  transitionId: S.String,
+  clientX: S.Number,
+  clientY: S.Number,
+})
+export const GraphContextMenuState = S.Union([
+  GraphContextMenuClosed,
+  GraphCanvasContextMenu,
+  GraphNodeContextMenu,
+  GraphTransitionContextMenu,
+])
+export type GraphContextMenuState = typeof GraphContextMenuState.Type
 
 export const Model = S.Struct({
   workflow: Workflow.WorkflowDefinition,
@@ -38,6 +76,8 @@ export const Model = S.Struct({
   graphPanY: S.Number,
   graphZoom: S.Number,
   graphPanState: GraphPanState,
+  transitionDragState: TransitionDragState,
+  graphContextMenuState: GraphContextMenuState,
   isActionMenuOpen: S.Boolean,
   isPreviewSaved: S.Boolean,
   isDirty: S.Boolean,

@@ -66,12 +66,12 @@ export const toWorkflowDefinition = (
         ? undefined
         : {
             allowSelfApproval: status.approval.allowSelfApproval,
-            onRejectedTransitionId: status.approval.onRejectedTransitionId ?? '',
+            approvedTransitionId: status.approval.approvedTransitionId,
+            rejectedTransitionId: status.approval.rejectedTransitionId,
             rules: status.approval.rules.map(rule => ({
               id: rule.id,
               minAmount: rule.minAmount ?? 0,
               roleId: roleIdFromApprovers(rule.approvers),
-              onApprovedTransitionId: rule.onApprovedTransitionId,
             })),
           },
   })),
@@ -103,10 +103,8 @@ export const toUpdateFlowDraftInput = (
           ? null
           : {
               allowSelfApproval: status.approval.allowSelfApproval,
-              onRejectedTransitionId:
-                status.approval.onRejectedTransitionId === ''
-                  ? null
-                  : status.approval.onRejectedTransitionId,
+              approvedTransitionId: status.approval.approvedTransitionId,
+              rejectedTransitionId: status.approval.rejectedTransitionId,
               rules: status.approval.rules.map(rule => ({
                 id: rule.id,
                 minAmount: rule.minAmount,
@@ -117,7 +115,6 @@ export const toUpdateFlowDraftInput = (
                     userId: null,
                   },
                 ],
-                onApprovedTransitionId: rule.onApprovedTransitionId,
               })),
             },
     }),

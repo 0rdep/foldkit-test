@@ -59,6 +59,7 @@ export type CreateFlowDefinitionInput = {
 };
 
 export type DuplicateOrderInput = {
+  readonly dropOffContactId: InputMaybe<Scalars['Int']['input']>;
   readonly orderId: Scalars['Int']['input'];
   readonly projectId: Scalars['Int']['input'];
 };
@@ -88,13 +89,15 @@ export type FlowApprovalAssigneeInput = {
 export type FlowApprovalConfig = {
   readonly __typename?: 'FlowApprovalConfig';
   readonly allowSelfApproval: Scalars['Boolean']['output'];
-  readonly onRejectedTransitionId: Maybe<Scalars['ID']['output']>;
+  readonly approvedTransitionId: Scalars['ID']['output'];
+  readonly rejectedTransitionId: Scalars['ID']['output'];
   readonly rules: ReadonlyArray<FlowApprovalRule>;
 };
 
 export type FlowApprovalConfigInput = {
   readonly allowSelfApproval: Scalars['Boolean']['input'];
-  readonly onRejectedTransitionId: InputMaybe<Scalars['ID']['input']>;
+  readonly approvedTransitionId: Scalars['ID']['input'];
+  readonly rejectedTransitionId: Scalars['ID']['input'];
   readonly rules: ReadonlyArray<FlowApprovalRuleInput>;
 };
 
@@ -103,14 +106,12 @@ export type FlowApprovalRule = {
   readonly approvers: ReadonlyArray<FlowApprovalAssignee>;
   readonly id: Scalars['ID']['output'];
   readonly minAmount: Maybe<Scalars['Float']['output']>;
-  readonly onApprovedTransitionId: Scalars['ID']['output'];
 };
 
 export type FlowApprovalRuleInput = {
   readonly approvers: ReadonlyArray<FlowApprovalAssigneeInput>;
   readonly id: Scalars['ID']['input'];
   readonly minAmount: InputMaybe<Scalars['Float']['input']>;
-  readonly onApprovedTransitionId: Scalars['ID']['input'];
 };
 
 export type FlowAvailableTransition = {
@@ -229,6 +230,7 @@ export type FlowPendingApproval = {
   readonly approvalRuleId: Scalars['ID']['output'];
   readonly canCurrentUserApprove: Scalars['Boolean']['output'];
   readonly canCurrentUserReject: Scalars['Boolean']['output'];
+  readonly occurrenceId: Scalars['ID']['output'];
   readonly recordedApprovals: Scalars['Int']['output'];
   readonly statusId: Scalars['ID']['output'];
 };
@@ -323,11 +325,37 @@ export type FlowTransitionDefinitionInput = {
   readonly toStatusId: Scalars['ID']['input'];
 };
 
+export type GenerateShipmentPdfFromSourceImagesInput = {
+  readonly imageKeys: ReadonlyArray<Scalars['String']['input']>;
+  readonly orderId: Scalars['Int']['input'];
+  readonly shipmentId: Scalars['Int']['input'];
+  readonly type: ShipmentDocumentType;
+};
+
+export type GenerateShipmentPdfFromSourceImagesOutput = {
+  readonly __typename?: 'GenerateShipmentPdfFromSourceImagesOutput';
+  readonly url: Scalars['String']['output'];
+};
+
+export type GenerateShipmentPdfFromStagedSourceImagesInput = {
+  readonly clientUploadId: Scalars['String']['input'];
+  readonly imageKeys: ReadonlyArray<Scalars['String']['input']>;
+  readonly orderId: Scalars['Int']['input'];
+  readonly shipmentId: Scalars['Int']['input'];
+  readonly type: ShipmentDocumentType;
+};
+
+export type GenerateShipmentPdfFromStagedSourceImagesOutput = {
+  readonly __typename?: 'GenerateShipmentPdfFromStagedSourceImagesOutput';
+  readonly url: Scalars['String']['output'];
+};
+
 export type Mutation = {
   readonly __typename?: 'Mutation';
   readonly CompanySettings: CompanySettingsMutations;
   readonly Flow: FlowMutations;
   readonly Order: OrderMutations;
+  readonly Shipment: ShipmentMutations;
 };
 
 /** A number setting. */
@@ -362,6 +390,32 @@ export type OrderMutationsDuplicateArgs = {
   input: DuplicateOrderInput;
 };
 
+export type PrepareShipmentSourceImageUploadInput = {
+  readonly mimeType: ShipmentSourceImageMimeType;
+  readonly orderId: Scalars['Int']['input'];
+  readonly shipmentId: Scalars['Int']['input'];
+  readonly type: ShipmentDocumentType;
+};
+
+export type PrepareShipmentSourceImageUploadOutput = {
+  readonly __typename?: 'PrepareShipmentSourceImageUploadOutput';
+  readonly key: Scalars['String']['output'];
+  readonly uploadUrl: Scalars['String']['output'];
+};
+
+export type PrepareStagedShipmentSourceImageUploadInput = {
+  readonly clientUploadId: Scalars['String']['input'];
+  readonly mimeType: ShipmentSourceImageMimeType;
+  readonly orderId: Scalars['Int']['input'];
+  readonly type: ShipmentDocumentType;
+};
+
+export type PrepareStagedShipmentSourceImageUploadOutput = {
+  readonly __typename?: 'PrepareStagedShipmentSourceImageUploadOutput';
+  readonly key: Scalars['String']['output'];
+  readonly uploadUrl: Scalars['String']['output'];
+};
+
 export type Query = {
   readonly __typename?: 'Query';
   readonly CompanySettings: CompanySettingsQueries;
@@ -390,6 +444,60 @@ export type SettingsInput = {
   readonly requireShipmentCertificateFix: InputMaybe<Scalars['Boolean']['input']>;
   readonly requireShipmentMerchandise: InputMaybe<Scalars['Boolean']['input']>;
 };
+
+export type ShipmentDocumentType =
+  | 'certificate'
+  | 'certificate_fix'
+  | 'merchandise';
+
+export type ShipmentMutations = {
+  readonly __typename?: 'ShipmentMutations';
+  /**
+   * Read previously uploaded source images from S3 and generate a shipment PDF.
+   * All imageKeys must be scoped to the orderId/shipmentId/type prefix.
+   */
+  readonly generatePdfFromSourceImages: GenerateShipmentPdfFromSourceImagesOutput;
+  /**
+   * Read staged source images from S3 and generate a shipment PDF after shipment
+   * creation. All imageKeys must be scoped to the orderId/clientUploadId/type prefix.
+   */
+  readonly generatePdfFromStagedSourceImages: GenerateShipmentPdfFromStagedSourceImagesOutput;
+  /**
+   * Generate a presigned S3 PUT URL for uploading a shipment source image.
+   * Mobile should PUT the image bytes directly to uploadUrl, then pass the key
+   * to generatePdfFromSourceImages.
+   */
+  readonly prepareSourceImageUpload: PrepareShipmentSourceImageUploadOutput;
+  /**
+   * Generate a presigned S3 PUT URL for uploading a staged source image before
+   * the shipment exists. Mobile should use one clientUploadId per document card.
+   */
+  readonly prepareStagedSourceImageUpload: PrepareStagedShipmentSourceImageUploadOutput;
+};
+
+
+export type ShipmentMutationsGeneratePdfFromSourceImagesArgs = {
+  input: GenerateShipmentPdfFromSourceImagesInput;
+};
+
+
+export type ShipmentMutationsGeneratePdfFromStagedSourceImagesArgs = {
+  input: GenerateShipmentPdfFromStagedSourceImagesInput;
+};
+
+
+export type ShipmentMutationsPrepareSourceImageUploadArgs = {
+  input: PrepareShipmentSourceImageUploadInput;
+};
+
+
+export type ShipmentMutationsPrepareStagedSourceImageUploadArgs = {
+  input: PrepareStagedShipmentSourceImageUploadInput;
+};
+
+export type ShipmentSourceImageMimeType =
+  | 'jpeg'
+  | 'png';
 
 /** A text setting. */
 export type TextSetting = {

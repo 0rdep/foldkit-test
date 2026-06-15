@@ -105,6 +105,38 @@ export const MovedGraphCanvasPointer = m('MovedGraphCanvasPointer', {
   screenY: S.Number,
 })
 export const ReleasedGraphCanvasPointer = m('ReleasedGraphCanvasPointer')
+export const PressedTransitionOutput = m('PressedTransitionOutput', {
+  statusId: S.String,
+  screenX: S.Number,
+  screenY: S.Number,
+})
+export const ReleasedTransitionInput = m('ReleasedTransitionInput', {
+  statusId: S.String,
+})
+export const PressedGraphCanvasContextMenu = m(
+  'PressedGraphCanvasContextMenu',
+  {
+    clientX: S.Number,
+    clientY: S.Number,
+  },
+)
+export const PressedGraphNodeContextMenu = m('PressedGraphNodeContextMenu', {
+  statusId: S.String,
+  clientX: S.Number,
+  clientY: S.Number,
+})
+export const PressedGraphTransitionContextMenu = m(
+  'PressedGraphTransitionContextMenu',
+  {
+    transitionId: S.String,
+    clientX: S.Number,
+    clientY: S.Number,
+  },
+)
+export const SuppressedNativeGraphContextMenu = m(
+  'SuppressedNativeGraphContextMenu',
+)
+export const ClickedClosedGraphContextMenu = m('ClickedClosedGraphContextMenu')
 export const ClickedZoomedGraphIn = m('ClickedZoomedGraphIn')
 export const ClickedZoomedGraphOut = m('ClickedZoomedGraphOut')
 export const ClickedResetGraphViewport = m('ClickedResetGraphViewport')
@@ -168,6 +200,13 @@ export const Message = S.Union([
   PressedGraphCanvas,
   MovedGraphCanvasPointer,
   ReleasedGraphCanvasPointer,
+  PressedTransitionOutput,
+  ReleasedTransitionInput,
+  PressedGraphCanvasContextMenu,
+  PressedGraphNodeContextMenu,
+  PressedGraphTransitionContextMenu,
+  SuppressedNativeGraphContextMenu,
+  ClickedClosedGraphContextMenu,
   ClickedZoomedGraphIn,
   ClickedZoomedGraphOut,
   ClickedResetGraphViewport,

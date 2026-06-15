@@ -1,7 +1,13 @@
 import { Array, Option } from 'effect'
 
 import * as MockBackend from '../../mockBackend'
-import { GraphPanIdle, type Model, type SavedWorkspace } from './model'
+import {
+  GraphContextMenuClosed,
+  GraphPanIdle,
+  type Model,
+  type SavedWorkspace,
+  TransitionDragIdle,
+} from './model'
 import { resetModel } from './update'
 
 export const fromSavedWorkspace = ({
@@ -47,6 +53,8 @@ export const fromSavedWorkspace = ({
     graphPanY: 0,
     graphZoom: 1,
     graphPanState: GraphPanIdle(),
+    transitionDragState: TransitionDragIdle(),
+    graphContextMenuState: GraphContextMenuClosed(),
     isActionMenuOpen: false,
     isPreviewSaved: false,
     isDirty: false,

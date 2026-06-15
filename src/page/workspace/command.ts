@@ -125,10 +125,10 @@ export const PublishFlow = Command.define(
     UpdateFlowDraftMutationText,
     { flowId, input: toUpdateFlowDraftInput(workflow) },
   ).pipe(
-    Effect.flatMap(() =>
+    Effect.flatMap(data =>
       Graphql.request<PublishFlowResponse, PublishFlowVariables>(
         PublishFlowMutationText,
-        { flowId },
+        { flowId: data.Flow.updateDraft.id },
       ),
     ),
     Effect.map(data =>
