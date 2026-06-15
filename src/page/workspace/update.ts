@@ -46,6 +46,11 @@ const parseNumberInput = (value: string, fallback: number): number => {
 const clampGraphZoom = (zoom: number): number =>
   Math.min(maxGraphZoom, Math.max(minGraphZoom, zoom))
 
+const editableActionKey = (
+  statusId: string,
+  action: Workflow.EditableAction,
+): string => `${statusId}:${action}`
+
 const selectedItemExists = (
   workflow: Workflow.WorkflowDefinition,
   selectedItemKind: Model['selectedItemKind'],
@@ -108,6 +113,7 @@ const resetModel = (): Model =>
     isPreviewSaved: false,
     isDirty: false,
     undoStack: [],
+    openEditableActionKeys: [],
     selectedActorId: 'pedro',
     selectedDocumentId: 'req-1001',
     lastRequestJson: '',
@@ -127,20 +133,32 @@ const updateSelectedDocument = (
       ),
   })
 
-const toggleEditPolicyField = (
+const toggleEditableActionRole = (
   editPolicy: Workflow.EditPolicy,
-  field: Workflow.LockField,
+  action: Workflow.EditableAction,
+  roleId: string,
 ): Workflow.EditPolicy => {
-  if (field === 'addItems') {
-    return evo(editPolicy, { addItems: value => !value })
+  const roles = Workflow.rolesForEditableAction(editPolicy, action)
+
+  if (!Array.contains(roles, roleId)) {
+    const nextDefinition = Workflow.editableAction(action, [...roles, roleId])
+    return Array.some(editPolicy, definition => definition.action === action)
+      ? Array.map(editPolicy, definition =>
+          definition.action === action ? nextDefinition : definition,
+        )
+      : [...editPolicy, nextDefinition]
   }
-  if (field === 'removeItems') {
-    return evo(editPolicy, { removeItems: value => !value })
+
+  const nextRoles = Array.filter(roles, allowedRole => allowedRole !== roleId)
+  if (Array.isReadonlyArrayEmpty(nextRoles)) {
+    return Array.filter(editPolicy, definition => definition.action !== action)
   }
-  if (field === 'changeDeliveryDate') {
-    return evo(editPolicy, { changeDeliveryDate: value => !value })
-  }
-  return evo(editPolicy, { changeAmount: value => !value })
+
+  return Array.map(editPolicy, definition =>
+    definition.action === action
+      ? Workflow.editableAction(action, nextRoles)
+      : definition,
+  )
 }
 
 const addTransitionEffect = (
@@ -464,17 +482,30 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           model,
         ),
 
-      ClickedToggledStatusLock: ({ statusId, field }) =>
+      ClickedToggledStatusActionDisclosure: ({ statusId, action }) => {
+        const key = editableActionKey(statusId, action)
+        return [
+          evo(model, {
+            openEditableActionKeys: keys =>
+              Array.contains(keys, key)
+                ? Array.filter(keys, currentKey => currentKey !== key)
+                : [...keys, key],
+          }),
+          [],
+        ]
+      },
+
+      ClickedToggledStatusActionRole: ({ statusId, action, roleId }) =>
         saveFlowChange(
           evo(model, {
             workflow: workflow =>
               Workflow.updateStatus(workflow, statusId, status =>
                 evo(status, {
                   editPolicy: editPolicy =>
-                    toggleEditPolicyField(editPolicy, field),
+                    toggleEditableActionRole(editPolicy, action, roleId),
                 }),
               ),
-            banner: () => 'Edit lock updated',
+            banner: () => 'Editable action roles updated',
           }),
           model,
         ),

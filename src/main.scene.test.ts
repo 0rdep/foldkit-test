@@ -202,15 +202,17 @@ describe('workflow scene', () => {
     )
   })
 
-  test('toggles an edit lock from the status inspector', () => {
+  test('toggles an editable action role from the status inspector', () => {
     Scene.scene(
       { update, view },
       Scene.with(defaultModel()),
       Scene.click(Scene.role('button', { name: 'Select Pending Approval' })),
-      Scene.click(Scene.role('button', { name: 'Add items: Blocked' })),
+      Scene.click(Scene.role('button', { name: 'Items action roles' })),
+      Scene.click(Scene.role('button', { name: 'Items: OrderCreator' })),
+      Scene.Command.expectHas(SaveWorkspace),
       Scene.expect(
-        Scene.role('button', { name: 'Add items: Allowed' }),
-      ).toExist(),
+        Scene.role('button', { name: 'Items: OrderCreator' }),
+      ).toHaveAttr('aria-pressed', 'true'),
       Scene.Command.resolve(SaveWorkspace, CompletedSaveWorkspace()),
     )
   })
@@ -251,7 +253,8 @@ describe('workflow scene', () => {
       { update, view },
       Scene.with(defaultModel()),
       Scene.click(Scene.role('button', { name: 'Select Pending Approval' })),
-      Scene.click(Scene.role('button', { name: 'Add items: Blocked' })),
+      Scene.click(Scene.role('button', { name: 'Items action roles' })),
+      Scene.click(Scene.role('button', { name: 'Items: OrderCreator' })),
       Scene.Command.resolve(SaveWorkspace, CompletedSaveWorkspace()),
       Scene.click(Scene.role('button', { name: 'Undo' })),
       Scene.expect(

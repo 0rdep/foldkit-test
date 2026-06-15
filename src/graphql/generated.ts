@@ -122,6 +122,12 @@ export type FlowAvailableTransition = {
   readonly toStatusName: Scalars['String']['output'];
 };
 
+export type FlowBlockedEditableAction = {
+  readonly __typename?: 'FlowBlockedEditableAction';
+  readonly action: FlowEditableAction;
+  readonly reason: Scalars['String']['output'];
+};
+
 export type FlowBlockedTransition = {
   readonly __typename?: 'FlowBlockedTransition';
   readonly id: Scalars['ID']['output'];
@@ -151,12 +157,28 @@ export type FlowDocumentType =
   | 'order'
   | 'requisition';
 
-export type FlowEditableField =
+export type FlowEditableAction =
   | 'attachments'
+  | 'delete'
   | 'deliveryDate'
   | 'discount'
+  | 'duplicate'
   | 'items'
-  | 'note';
+  | 'note'
+  | 'shipments'
+  | 'subCompany'
+  | 'supplier';
+
+export type FlowEditableActionDefinition = {
+  readonly __typename?: 'FlowEditableActionDefinition';
+  readonly action: FlowEditableAction;
+  readonly allowedRoles: ReadonlyArray<Scalars['String']['output']>;
+};
+
+export type FlowEditableActionDefinitionInput = {
+  readonly action: FlowEditableAction;
+  readonly allowedRoles: ReadonlyArray<Scalars['String']['input']>;
+};
 
 export type FlowMutations = {
   readonly __typename?: 'FlowMutations';
@@ -240,9 +262,9 @@ export type FlowQueries = {
   /** Get available flow definitions. If documentType is omitted, returns all default definitions. */
   readonly definitions: ReadonlyArray<FlowDefinition>;
   /** Get evaluated flow state for an order. */
-  readonly orderState: FlowRuntimeState;
+  readonly orderState: Maybe<FlowRuntimeState>;
   /** Get evaluated flow state for a requisition. */
-  readonly requisitionState: FlowRuntimeState;
+  readonly requisitionState: Maybe<FlowRuntimeState>;
 };
 
 
@@ -262,9 +284,8 @@ export type FlowQueriesRequisitionStateArgs = {
 
 export type FlowRuntimeEditPolicy = {
   readonly __typename?: 'FlowRuntimeEditPolicy';
-  readonly canDelete: Scalars['Boolean']['output'];
-  readonly canDuplicate: Scalars['Boolean']['output'];
-  readonly editableFields: ReadonlyArray<FlowEditableField>;
+  readonly blockedActions: ReadonlyArray<FlowBlockedEditableAction>;
+  readonly editableActions: ReadonlyArray<FlowEditableAction>;
   readonly editableItemIds: ReadonlyArray<Scalars['Int']['output']>;
 };
 
@@ -284,7 +305,7 @@ export type FlowRuntimeState = {
 export type FlowStatusDefinition = {
   readonly __typename?: 'FlowStatusDefinition';
   readonly approval: Maybe<FlowApprovalConfig>;
-  readonly editableFields: ReadonlyArray<FlowEditableField>;
+  readonly editableActions: ReadonlyArray<FlowEditableActionDefinition>;
   readonly id: Scalars['ID']['output'];
   readonly kind: FlowStatusKind;
   readonly name: Scalars['String']['output'];
@@ -292,7 +313,7 @@ export type FlowStatusDefinition = {
 
 export type FlowStatusDefinitionInput = {
   readonly approval: InputMaybe<FlowApprovalConfigInput>;
-  readonly editableFields: ReadonlyArray<FlowEditableField>;
+  readonly editableActions: ReadonlyArray<FlowEditableActionDefinitionInput>;
   readonly id: Scalars['ID']['input'];
   readonly kind: FlowStatusKind;
   readonly name: Scalars['String']['input'];

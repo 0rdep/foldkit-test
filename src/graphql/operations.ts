@@ -19,7 +19,10 @@ fragment FlowDefinitionFields on FlowDefinition {
     id
     name
     kind
-    editableFields
+    editableActions {
+      action
+      allowedRoles
+    }
     approval {
       allowSelfApproval
       approvedTransitionId
@@ -68,7 +71,10 @@ fragment FlowDefinitionFields on FlowDefinition {
     id
     name
     kind
-    editableFields
+    editableActions {
+      action
+      allowedRoles
+    }
     approval {
       allowSelfApproval
       approvedTransitionId
@@ -117,7 +123,10 @@ fragment FlowDefinitionFields on FlowDefinition {
     id
     name
     kind
-    editableFields
+    editableActions {
+      action
+      allowedRoles
+    }
     approval {
       allowSelfApproval
       approvedTransitionId

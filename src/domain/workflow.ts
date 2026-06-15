@@ -9,20 +9,27 @@ export const StatusType = S.Literals([
 ])
 export type StatusType = typeof StatusType.Type
 
-export const LockField = S.Literals([
-  'addItems',
-  'removeItems',
-  'changeDeliveryDate',
-  'changeAmount',
+export const EditableAction = S.Literals([
+  'note',
+  'deliveryDate',
+  'items',
+  'discount',
+  'attachments',
+  'supplier',
+  'subCompany',
+  'shipments',
+  'delete',
+  'duplicate',
 ])
-export type LockField = typeof LockField.Type
+export type EditableAction = typeof EditableAction.Type
 
-export const EditPolicy = S.Struct({
-  addItems: S.Boolean,
-  removeItems: S.Boolean,
-  changeDeliveryDate: S.Boolean,
-  changeAmount: S.Boolean,
+export const EditableActionDefinition = S.Struct({
+  action: EditableAction,
+  allowedRoles: S.Array(S.String),
 })
+export type EditableActionDefinition = typeof EditableActionDefinition.Type
+
+export const EditPolicy = S.Array(EditableActionDefinition)
 export type EditPolicy = typeof EditPolicy.Type
 
 export const ApprovalMode = S.Literals(['all', 'any'])
@@ -173,26 +180,68 @@ export type TransitionResult = {
   readonly emittedEffects: ReadonlyArray<EffectLogEntry>
 }
 
-export const unlockedEditPolicy: EditPolicy = {
-  addItems: true,
-  removeItems: true,
-  changeDeliveryDate: true,
-  changeAmount: true,
-}
+export const editableActions: ReadonlyArray<EditableAction> = [
+  'note',
+  'deliveryDate',
+  'items',
+  'discount',
+  'attachments',
+  'supplier',
+  'subCompany',
+  'shipments',
+  'delete',
+  'duplicate',
+]
 
-export const lockedEditPolicy: EditPolicy = {
-  addItems: false,
-  removeItems: false,
-  changeDeliveryDate: false,
-  changeAmount: false,
-}
+const requisitionWriteRoles = [
+  'SystemAdmin',
+  'OrderModerator',
+  'OrderModeratorLimited',
+  'OrderCreator',
+]
 
-export const approvalEditPolicy: EditPolicy = {
-  addItems: false,
-  removeItems: false,
-  changeDeliveryDate: false,
-  changeAmount: false,
-}
+const requisitionFullEditRoles = ['SystemAdmin', 'OrderModerator']
+
+export const editableAction = (
+  action: EditableAction,
+  allowedRoles: ReadonlyArray<string>,
+): EditableActionDefinition => ({ action, allowedRoles: [...allowedRoles] })
+
+export const editPolicyFromActions = (
+  actions: ReadonlyArray<EditableAction>,
+  allowedRoles: ReadonlyArray<string>,
+): EditPolicy => Array.map(actions, action => editableAction(action, allowedRoles))
+
+export const rolesForEditableAction = (
+  editPolicy: EditPolicy,
+  action: EditableAction,
+): ReadonlyArray<string> =>
+  Option.getOrElse(
+    Array.findFirst(editPolicy, definition => definition.action === action),
+    () => editableAction(action, []),
+  ).allowedRoles
+
+export const canRoleEditAction = (
+  editPolicy: EditPolicy,
+  action: EditableAction,
+  roleId: string,
+): boolean => Array.contains(rolesForEditableAction(editPolicy, action), roleId)
+
+export const unlockedEditPolicy: EditPolicy = editPolicyFromActions(
+  ['note', 'deliveryDate', 'items', 'discount', 'attachments', 'delete', 'duplicate'],
+  requisitionWriteRoles,
+)
+
+export const lockedEditPolicy: EditPolicy = []
+
+export const approvalEditPolicy: EditPolicy = [
+  editableAction('note', requisitionFullEditRoles),
+  editableAction('deliveryDate', requisitionFullEditRoles),
+  editableAction('items', requisitionFullEditRoles),
+  editableAction('discount', requisitionFullEditRoles),
+  editableAction('attachments', requisitionWriteRoles),
+  editableAction('duplicate', requisitionWriteRoles),
+]
 
 export const findStatus = (
   workflow: WorkflowDefinition,
@@ -264,6 +313,37 @@ export const effectTypeLabel = (effectType: EffectType): string => {
     return 'Create audit log'
   }
   return 'Call webhook'
+}
+
+export const editableActionLabel = (action: EditableAction): string => {
+  if (action === 'deliveryDate') {
+    return 'Delivery date'
+  }
+  if (action === 'items') {
+    return 'Items'
+  }
+  if (action === 'discount') {
+    return 'Discount'
+  }
+  if (action === 'attachments') {
+    return 'Attachments'
+  }
+  if (action === 'supplier') {
+    return 'Supplier'
+  }
+  if (action === 'subCompany') {
+    return 'Sub-company'
+  }
+  if (action === 'shipments') {
+    return 'Shipments'
+  }
+  if (action === 'delete') {
+    return 'Delete'
+  }
+  if (action === 'duplicate') {
+    return 'Duplicate'
+  }
+  return 'Note'
 }
 
 const isAmountInRule = (amount: number, rule: ApprovalRule): boolean =>

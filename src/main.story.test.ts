@@ -158,8 +158,13 @@ describe('workflow engine update', () => {
       item => item.id === nextModel.workspace.documents[0]?.currentStatusId,
     )
 
-    expect(status?.editPolicy.addItems).toBe(false)
-    expect(status?.editPolicy.changeDeliveryDate).toBe(false)
+    const editPolicy = status?.editPolicy ?? Workflow.lockedEditPolicy
+    expect(
+      Workflow.canRoleEditAction(editPolicy, 'items', 'OrderCreator'),
+    ).toBe(false)
+    expect(
+      Workflow.canRoleEditAction(editPolicy, 'deliveryDate', 'OrderCreator'),
+    ).toBe(false)
   })
 
   test('manager approval records approval and advances to approved', () => {

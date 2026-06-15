@@ -13,7 +13,8 @@ import {
   ClickedRemovedApprovalRule,
   ClickedResetGraphViewport,
   ClickedSavedPreviewLocal,
-  ClickedToggledStatusLock,
+  ClickedToggledStatusActionDisclosure,
+  ClickedToggledStatusActionRole,
   ClickedToggledTransitionRole,
   ClickedUndidFlowChanges,
   ClickedZoomedGraphIn,
@@ -41,13 +42,6 @@ const statusTypes: ReadonlyArray<Workflow.StatusType> = [
   'normal',
   'approval',
   'final',
-]
-
-const lockFields: ReadonlyArray<Workflow.LockField> = [
-  'addItems',
-  'removeItems',
-  'changeDeliveryDate',
-  'changeAmount',
 ]
 
 const transitionRoleIds: ReadonlyArray<string> = [
@@ -91,19 +85,6 @@ const statusTypeFromString = (value: string): Workflow.StatusType => {
     return 'final'
   }
   return 'normal'
-}
-
-const lockFieldLabel = (field: Workflow.LockField): string => {
-  if (field === 'addItems') {
-    return 'Add items'
-  }
-  if (field === 'removeItems') {
-    return 'Remove items'
-  }
-  if (field === 'changeDeliveryDate') {
-    return 'Change delivery date'
-  }
-  return 'Change amount'
 }
 
 const approvalAmountRangeLabel = (rule: Workflow.ApprovalRule): string => {
@@ -1175,6 +1156,148 @@ const transitionRoleEditor = (transition: Workflow.Transition): Html => {
   )
 }
 
+const editableActionRoleEditor = (
+  status: Workflow.Status,
+  action: Workflow.EditableAction,
+): Html => {
+  const h = html<Message>()
+
+  return h.div(
+    [h.Class('space-y-2')],
+    [
+      h.span(
+        [h.Class('text-sm font-medium text-slate-700')],
+        ['Who can edit this action'],
+      ),
+      h.div(
+        [h.Class('grid gap-2 sm:grid-cols-2')],
+        Array.map(transitionRoleIds, roleId => {
+          const isAllowed = Workflow.canRoleEditAction(
+            status.editPolicy,
+            action,
+            roleId,
+          )
+
+          return h.button(
+            [
+              h.Type('button'),
+              h.Attribute(
+                'aria-label',
+                `${Workflow.editableActionLabel(action)}: ${Workflow.roleLabel(roleId)}`,
+              ),
+              h.OnClick(
+                ClickedToggledStatusActionRole({
+                  statusId: status.id,
+                  action,
+                  roleId,
+                }),
+              ),
+              h.AriaPressed(isAllowed ? 'true' : 'false'),
+              h.Style(
+                isAllowed
+                  ? {
+                      backgroundColor: '#dcfce7',
+                      borderColor: '#86efac',
+                      color: '#166534',
+                    }
+                  : {
+                      backgroundColor: '#ffffff',
+                      borderColor: '#cbd5e1',
+                      color: '#475569',
+                    },
+              ),
+              h.Class(
+                clsx(buttonClass, {
+                  'shadow-sm ring-2 ring-green-200': isAllowed,
+                }),
+              ),
+            ],
+            [Workflow.roleLabel(roleId)],
+          )
+        }),
+      ),
+    ],
+  )
+}
+
+const editableActionDisclosureRow = (
+  model: Model,
+  status: Workflow.Status,
+  action: Workflow.EditableAction,
+): Html => {
+  const h = html<Message>()
+  const roles = Workflow.rolesForEditableAction(status.editPolicy, action)
+  const actionKey = `${status.id}:${action}`
+  const isOpen = Array.contains(model.openEditableActionKeys, actionKey)
+
+  return h.div(
+    [
+      h.Class(
+        'rounded-xl border border-slate-200 bg-white p-2',
+      ),
+    ],
+    [
+      h.details(
+        isOpen
+          ? [h.Class('group min-w-0 flex-1'), h.Attribute('open', 'open')]
+          : [h.Class('group min-w-0 flex-1')],
+        [
+          h.summary(
+            [
+              h.Attribute('role', 'button'),
+              h.Attribute('aria-label', `${Workflow.editableActionLabel(action)} action roles`),
+              h.OnClick(
+                ClickedToggledStatusActionDisclosure({
+                  statusId: status.id,
+                  action,
+                }),
+              ),
+              h.Class(
+                'flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-2 py-2 text-sm font-semibold text-slate-900 marker:hidden hover:bg-slate-50',
+              ),
+            ],
+            [
+              h.span([h.Class('truncate')], [Workflow.editableActionLabel(action)]),
+              h.span(
+                [
+                  h.Class(
+                    'shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500',
+                  ),
+                ],
+                [`${roles.length} roles`],
+              ),
+            ],
+          ),
+          h.div(
+            [h.Class('px-2 pb-2 pt-3')],
+            [editableActionRoleEditor(status, action)],
+          ),
+        ],
+      ),
+    ],
+  )
+}
+
+const statusEditableActionsSection = (
+  model: Model,
+  status: Workflow.Status,
+): Html => {
+  const h = html<Message>()
+
+  return h.div(
+    [h.Class('mt-5')],
+    [
+      h.h3([h.Class(headingClass)], ['Editable actions']),
+      h.div(
+        [h.Class('mt-3 grid gap-2')],
+        Array.map(Workflow.editableActions, action =>
+          editableActionDisclosureRow(model, status, action),
+        ),
+      ),
+    ],
+  )
+}
+
 const transitionDisclosureRow = (
   workflow: Workflow.WorkflowDefinition,
   transition: Workflow.Transition,
@@ -1341,39 +1464,7 @@ const statusInspector = (model: Model, statusId: string): Html => {
               ),
             ],
           ),
-          h.div(
-            [h.Class('mt-5')],
-            [
-              h.h3([h.Class(headingClass)], ['Edit locks']),
-              h.div(
-                [h.Class('mt-3 grid gap-2')],
-                Array.map(lockFields, field => {
-                  const isAllowed = status.editPolicy[field]
-                  return h.button(
-                    [
-                      h.Type('button'),
-                      h.OnClick(
-                        ClickedToggledStatusLock({
-                          statusId: status.id,
-                          field,
-                        }),
-                      ),
-                      h.Class(
-                        clsx(buttonClass, {
-                          'border-emerald-200 bg-emerald-50 text-emerald-700':
-                            isAllowed,
-                          'border-red-200 bg-red-50 text-red-700': !isAllowed,
-                        }),
-                      ),
-                    ],
-                    [
-                      `${lockFieldLabel(field)}: ${isAllowed ? 'Allowed' : 'Blocked'}`,
-                    ],
-                  )
-                }),
-              ),
-            ],
-          ),
+          statusEditableActionsSection(model, status),
           statusTransitionsSection(model, status),
           status.type === 'approval'
             ? h.div(

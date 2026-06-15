@@ -82,6 +82,7 @@ export const Model = S.Struct({
   isPreviewSaved: S.Boolean,
   isDirty: S.Boolean,
   undoStack: S.Array(Workflow.WorkflowDefinition),
+  openEditableActionKeys: S.Array(S.String),
   selectedActorId: S.String,
   selectedDocumentId: S.String,
   lastRequestJson: S.String,

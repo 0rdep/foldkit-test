@@ -10,7 +10,10 @@ fragment FlowDefinitionFields on FlowDefinition {
     id
     name
     kind
-    editableFields
+    editableActions {
+      action
+      allowedRoles
+    }
     approval {
       allowSelfApproval
       approvedTransitionId
@@ -46,7 +49,10 @@ fragment FlowRuntimeStateFields on FlowRuntimeState {
     id
     name
     kind
-    editableFields
+    editableActions {
+      action
+      allowedRoles
+    }
     approval {
       allowSelfApproval
       approvedTransitionId
@@ -63,10 +69,12 @@ fragment FlowRuntimeStateFields on FlowRuntimeState {
     }
   }
   editPolicy {
-    editableFields
+    editableActions
+    blockedActions {
+      action
+      reason
+    }
     editableItemIds
-    canDelete
-    canDuplicate
   }
   availableTransitions {
     id

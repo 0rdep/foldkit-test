@@ -2,7 +2,7 @@ import { Array, Option } from 'effect'
 
 import { Workflow } from '../domain'
 import type {
-  FlowEditableField,
+  FlowEditableActionDefinitionInput,
   FlowStatusDefinitionInput,
   FlowTransitionDefinitionInput,
   UpdateFlowDraftInput,
@@ -21,32 +21,20 @@ const roleIdFromApprovers = (
     () => ({ roleId: 'OrderModerator' }),
   ).roleId ?? 'OrderModerator'
 
-const editableFieldsFromPolicy = (
+const editableActionsFromPolicy = (
   editPolicy: Workflow.EditPolicy,
-): Array<FlowEditableField> => {
-  const fields: Array<FlowEditableField> = ['note', 'attachments']
+): Array<FlowEditableActionDefinitionInput> =>
+  editPolicy.map(definition => ({
+    action: definition.action,
+    allowedRoles: [...definition.allowedRoles],
+  }))
 
-  if (editPolicy.changeDeliveryDate) {
-    fields.push('deliveryDate')
-  }
-  if (editPolicy.addItems || editPolicy.removeItems) {
-    fields.push('items')
-  }
-  if (editPolicy.changeAmount) {
-    fields.push('discount')
-  }
-
-  return fields
-}
-
-const editPolicyFromFields = (
-  editableFields: ReadonlyArray<FlowEditableField>,
-): Workflow.EditPolicy => ({
-  addItems: editableFields.includes('items'),
-  removeItems: editableFields.includes('items'),
-  changeDeliveryDate: editableFields.includes('deliveryDate'),
-  changeAmount: editableFields.includes('discount'),
-})
+const editPolicyFromActions = (
+  editableActions: FlowDefinitionFieldsFragment['statuses'][number]['editableActions'],
+): Workflow.EditPolicy =>
+  editableActions.map(definition =>
+    Workflow.editableAction(definition.action, definition.allowedRoles),
+  )
 
 export const toWorkflowDefinition = (
   definition: FlowDefinitionFieldsFragment,
@@ -60,7 +48,7 @@ export const toWorkflowDefinition = (
     id: status.id,
     name: status.name,
     type: status.kind,
-    editPolicy: editPolicyFromFields(status.editableFields),
+    editPolicy: editPolicyFromActions(status.editableActions),
     approval:
       status.approval === null
         ? undefined
@@ -97,7 +85,7 @@ export const toUpdateFlowDraftInput = (
       id: status.id,
       name: status.name,
       kind: status.type,
-      editableFields: editableFieldsFromPolicy(status.editPolicy),
+      editableActions: editableActionsFromPolicy(status.editPolicy),
       approval:
         status.approval === undefined
           ? null

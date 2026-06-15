@@ -59,6 +59,7 @@ export const fromSavedWorkspace = ({
     isPreviewSaved: false,
     isDirty: false,
     undoStack: [],
+    openEditableActionKeys: [],
     selectedActorId,
     selectedDocumentId,
     lastRequestJson: MockBackend.formatRequest(exchange),

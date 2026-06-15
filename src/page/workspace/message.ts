@@ -16,10 +16,18 @@ export const SelectedStatusType = m('SelectedStatusType', {
   statusId: S.String,
   value: Workflow.StatusType,
 })
-export const ClickedToggledStatusLock = m('ClickedToggledStatusLock', {
+export const ClickedToggledStatusActionRole = m('ClickedToggledStatusActionRole', {
   statusId: S.String,
-  field: Workflow.LockField,
+  action: Workflow.EditableAction,
+  roleId: S.String,
 })
+export const ClickedToggledStatusActionDisclosure = m(
+  'ClickedToggledStatusActionDisclosure',
+  {
+    statusId: S.String,
+    action: Workflow.EditableAction,
+  },
+)
 export const ClickedAddedStatus = m('ClickedAddedStatus')
 export const ClickedDeletedStatus = m('ClickedDeletedStatus', {
   statusId: S.String,
@@ -174,7 +182,8 @@ export const Message = S.Union([
   SelectedStatus,
   UpdatedStatusName,
   SelectedStatusType,
-  ClickedToggledStatusLock,
+  ClickedToggledStatusActionRole,
+  ClickedToggledStatusActionDisclosure,
   ClickedAddedStatus,
   ClickedDeletedStatus,
   SelectedTransition,
