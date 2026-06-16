@@ -1,3 +1,15 @@
+query CompanyFindMany {
+  Company {
+    findMany {
+      items {
+        id
+        name
+        active
+      }
+    }
+  }
+}
+
 fragment FlowDefinitionFields on FlowDefinition {
   id
   companyId
@@ -97,9 +109,17 @@ fragment FlowRuntimeStateFields on FlowRuntimeState {
   }
 }
 
-query FlowDefinitions($documentType: FlowDocumentType) {
+query FlowDefinitions($documentType: FlowDocumentType, $companyId: ID) {
   Flow {
-    definitions(documentType: $documentType) {
+    definitions(documentType: $documentType, companyId: $companyId) {
+      ...FlowDefinitionFields
+    }
+  }
+}
+
+query FlowDefinitionHistory($flowId: ID!, $companyId: ID) {
+  Flow {
+    history(flowId: $flowId, companyId: $companyId) {
       ...FlowDefinitionFields
     }
   }

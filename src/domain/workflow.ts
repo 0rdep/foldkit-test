@@ -1,13 +1,15 @@
 import { Array, Option, Schema as S, String, pipe } from 'effect'
 import { evo } from 'foldkit/struct'
 
-export const StatusType = S.Literals([
-  'draft',
-  'normal',
-  'approval',
-  'final',
-])
+export const StatusType = S.Literals(['draft', 'normal', 'final'])
 export type StatusType = typeof StatusType.Type
+
+export const FlowDefinitionState = S.Literals([
+  'draft',
+  'published',
+  'archived',
+])
+export type FlowDefinitionState = typeof FlowDefinitionState.Type
 
 export const EditableAction = S.Literals([
   'note',
@@ -32,30 +34,11 @@ export type EditableActionDefinition = typeof EditableActionDefinition.Type
 export const EditPolicy = S.Array(EditableActionDefinition)
 export type EditPolicy = typeof EditPolicy.Type
 
-export const ApprovalMode = S.Literals(['all', 'any'])
-export type ApprovalMode = typeof ApprovalMode.Type
-
-export const ApprovalRule = S.Struct({
-  id: S.String,
-  minAmount: S.Number,
-  roleId: S.String,
-})
-export type ApprovalRule = typeof ApprovalRule.Type
-
-export const ApprovalConfig = S.Struct({
-  rules: S.Array(ApprovalRule),
-  approvedTransitionId: S.String,
-  rejectedTransitionId: S.String,
-  allowSelfApproval: S.Boolean,
-})
-export type ApprovalConfig = typeof ApprovalConfig.Type
-
 export const Status = S.Struct({
   id: S.String,
   name: S.String,
   type: StatusType,
   editPolicy: EditPolicy,
-  approval: S.optional(ApprovalConfig),
 })
 export type Status = typeof Status.Type
 
@@ -91,6 +74,7 @@ export const WorkflowDefinition = S.Struct({
   name: S.String,
   documentType: S.String,
   version: S.Number,
+  state: S.optional(FlowDefinitionState),
   initialStatusId: S.String,
   statuses: S.Array(Status),
   transitions: S.Array(Transition),
@@ -103,15 +87,6 @@ export const Actor = S.Struct({
   roleIds: S.Array(S.String),
 })
 export type Actor = typeof Actor.Type
-
-export const ApprovalRecord = S.Struct({
-  id: S.String,
-  statusId: S.String,
-  approvalRuleId: S.String,
-  actorId: S.String,
-  roleId: S.String,
-})
-export type ApprovalRecord = typeof ApprovalRecord.Type
 
 export const EffectStatus = S.Literals(['pending', 'succeeded', 'failed'])
 export type EffectStatus = typeof EffectStatus.Type
@@ -138,7 +113,6 @@ export const DocumentInstance = S.Struct({
   workflowVersion: S.Number,
   amount: S.Number,
   currentStatusId: S.String,
-  approvals: S.Array(ApprovalRecord),
   effectLog: S.Array(EffectLogEntry),
   eventLog: S.Array(WorkflowEvent),
 })
@@ -156,26 +130,17 @@ export type BlockedTransition = {
   readonly reason: string
 }
 
-export type PendingApproval = {
-  readonly statusId: string
-  readonly approvalRuleId: string
-  readonly roleId: string
-  readonly approvedCount: number
-  readonly amountRange: string
-}
-
 export type RuntimeState = {
   readonly documentId: string
   readonly currentStatus: Status
   readonly availableTransitions: ReadonlyArray<AvailableTransition>
   readonly blockedTransitions: ReadonlyArray<BlockedTransition>
   readonly editPolicy: EditPolicy
-  readonly pendingApprovals: ReadonlyArray<PendingApproval>
 }
 
 export type TransitionResult = {
   readonly document: DocumentInstance
-  readonly result: 'transitioned' | 'approvalRecorded' | 'blocked'
+  readonly result: 'transitioned' | 'blocked'
   readonly message: string
   readonly emittedEffects: ReadonlyArray<EffectLogEntry>
 }
@@ -200,8 +165,6 @@ const requisitionWriteRoles = [
   'OrderCreator',
 ]
 
-const requisitionFullEditRoles = ['SystemAdmin', 'OrderModerator']
-
 export const editableAction = (
   action: EditableAction,
   allowedRoles: ReadonlyArray<string>,
@@ -210,7 +173,8 @@ export const editableAction = (
 export const editPolicyFromActions = (
   actions: ReadonlyArray<EditableAction>,
   allowedRoles: ReadonlyArray<string>,
-): EditPolicy => Array.map(actions, action => editableAction(action, allowedRoles))
+): EditPolicy =>
+  Array.map(actions, action => editableAction(action, allowedRoles))
 
 export const rolesForEditableAction = (
   editPolicy: EditPolicy,
@@ -228,20 +192,19 @@ export const canRoleEditAction = (
 ): boolean => Array.contains(rolesForEditableAction(editPolicy, action), roleId)
 
 export const unlockedEditPolicy: EditPolicy = editPolicyFromActions(
-  ['note', 'deliveryDate', 'items', 'discount', 'attachments', 'delete', 'duplicate'],
+  [
+    'note',
+    'deliveryDate',
+    'items',
+    'discount',
+    'attachments',
+    'delete',
+    'duplicate',
+  ],
   requisitionWriteRoles,
 )
 
 export const lockedEditPolicy: EditPolicy = []
-
-export const approvalEditPolicy: EditPolicy = [
-  editableAction('note', requisitionFullEditRoles),
-  editableAction('deliveryDate', requisitionFullEditRoles),
-  editableAction('items', requisitionFullEditRoles),
-  editableAction('discount', requisitionFullEditRoles),
-  editableAction('attachments', requisitionWriteRoles),
-  editableAction('duplicate', requisitionWriteRoles),
-]
 
 export const findStatus = (
   workflow: WorkflowDefinition,
@@ -290,9 +253,6 @@ export const roleLabel = (roleId: string): string =>
   )
 
 export const statusTypeLabel = (statusType: StatusType): string => {
-  if (statusType === 'approval') {
-    return 'Approval'
-  }
   if (statusType === 'final') {
     return 'Final'
   }
@@ -346,9 +306,6 @@ export const editableActionLabel = (action: EditableAction): string => {
   return 'Note'
 }
 
-const isAmountInRule = (amount: number, rule: ApprovalRule): boolean =>
-  amount >= rule.minAmount
-
 const actorHasRole = (actor: Actor, roleId: string): boolean =>
   Array.contains(actor.roleIds, roleId)
 
@@ -357,109 +314,6 @@ const canActorExecuteTransition = (
   transition: Transition,
 ): boolean =>
   Array.some(transition.allowedRoles, roleId => actorHasRole(actor, roleId))
-
-const matchingRules = (
-  approval: ApprovalConfig,
-  amount: number,
-): ReadonlyArray<ApprovalRule> =>
-  Array.filter(approval.rules, rule => isAmountInRule(amount, rule))
-
-const approvalsForStatus = (
-  document: DocumentInstance,
-  statusId: string,
-): ReadonlyArray<ApprovalRecord> =>
-  Array.filter(
-    document.approvals,
-    approval => approval.statusId === statusId,
-  )
-
-const approvalsForRule = (
-  approvals: ReadonlyArray<ApprovalRecord>,
-  ruleId: string,
-): ReadonlyArray<ApprovalRecord> =>
-  Array.filter(approvals, approval => approval.approvalRuleId === ruleId)
-
-const amountRangeLabel = (rule: ApprovalRule): string => {
-  if (rule.minAmount <= 1) {
-    return 'all amounts'
-  }
-  return `amounts from ${rule.minAmount}`
-}
-
-const canActorApproveRule = (actor: Actor, rule: ApprovalRule): boolean =>
-  actorHasRole(actor, rule.roleId)
-
-const alreadyApproved = (
-  document: DocumentInstance,
-  statusId: string,
-  actorId: string,
-): boolean =>
-  pipe(
-    approvalsForStatus(document, statusId),
-    Array.some(approval => approval.actorId === actorId),
-  )
-
-const isApprovalRuleComplete = (
-  rule: ApprovalRule,
-  approvals: ReadonlyArray<ApprovalRecord>,
-): boolean => {
-  return approvalsForRule(approvals, rule.id).length > 0
-}
-
-const isApprovedOutputTransition = (
-  status: Status,
-  transition: Transition,
-): boolean => status.approval?.approvedTransitionId === transition.id
-
-const nextApprovableRule = (
-  approval: ApprovalConfig,
-  document: DocumentInstance,
-  statusId: string,
-  actor: Actor,
-): Option.Option<ApprovalRule> =>
-  pipe(
-    matchingRules(approval, document.amount),
-    Array.findFirst(
-      rule =>
-        canActorApproveRule(actor, rule) &&
-        !isApprovalRuleComplete(rule, approvalsForStatus(document, statusId)),
-    ),
-  )
-
-const areMatchingApprovalRulesComplete = (
-  approval: ApprovalConfig,
-  document: DocumentInstance,
-  statusId: string,
-): boolean => {
-  const approvals = approvalsForStatus(document, statusId)
-  return pipe(
-    matchingRules(approval, document.amount),
-    Array.every(rule => isApprovalRuleComplete(rule, approvals)),
-  )
-}
-
-export const pendingApprovalsForDocument = (
-  workflow: WorkflowDefinition,
-  document: DocumentInstance,
-): ReadonlyArray<PendingApproval> =>
-  pipe(
-    workflow.statuses,
-    Array.filter(status => status.id === document.currentStatusId),
-    Array.flatMap(status => {
-      if (status.approval === undefined) {
-        return []
-      }
-      const rules = matchingRules(status.approval, document.amount)
-      const approvals = approvalsForStatus(document, status.id)
-      return Array.map(rules, rule => ({
-        statusId: status.id,
-        approvalRuleId: rule.id,
-        roleId: rule.roleId,
-        approvedCount: approvalsForRule(approvals, rule.id).length,
-        amountRange: amountRangeLabel(rule),
-      }))
-    }),
-  )
 
 export const runtimeState = (
   workflow: WorkflowDefinition,
@@ -495,24 +349,6 @@ export const runtimeState = (
         onSome: status => status.name,
       })
 
-      if (!isApprovedOutputTransition(currentStatus, transition)) {
-        return [
-          {
-            id: transition.id,
-            label: transition.label,
-            toStatusName,
-          },
-        ]
-      }
-
-      const maybeRule = currentStatus.approval
-        ? nextApprovableRule(currentStatus.approval, document, currentStatus.id, actor)
-        : Option.none()
-
-      if (Option.isNone(maybeRule) || alreadyApproved(document, currentStatus.id, actor.id)) {
-        return []
-      }
-
       return [
         {
           id: transition.id,
@@ -539,50 +375,6 @@ export const runtimeState = (
         ]
       }
 
-      if (!isApprovedOutputTransition(currentStatus, transition)) {
-        return []
-      }
-
-      const maybeRule = currentStatus.approval
-        ? nextApprovableRule(currentStatus.approval, document, currentStatus.id, actor)
-        : Option.none()
-
-      if (alreadyApproved(document, currentStatus.id, actor.id)) {
-        return [
-          {
-            id: transition.id,
-            label: transition.label,
-            reason: 'This actor already approved this status',
-          },
-        ]
-      }
-
-      if (Option.isNone(maybeRule)) {
-        const maybeRequiredRule = currentStatus.approval
-          ? pipe(
-              matchingRules(currentStatus.approval, document.amount),
-              Array.findFirst(
-                rule =>
-                  !isApprovalRuleComplete(
-                    rule,
-                    approvalsForStatus(document, currentStatus.id),
-                  ),
-              ),
-            )
-          : Option.none()
-
-        return Option.match(maybeRequiredRule, {
-          onNone: () => [],
-          onSome: rule => [
-            {
-              id: transition.id,
-              label: transition.label,
-              reason: `Requires ${roleLabel(rule.roleId)}`,
-            },
-          ],
-        })
-      }
-
       return []
     }),
   )
@@ -593,7 +385,6 @@ export const runtimeState = (
     availableTransitions,
     blockedTransitions,
     editPolicy: currentStatus.editPolicy,
-    pendingApprovals: pendingApprovalsForDocument(workflow, document),
   }
 }
 
@@ -628,11 +419,6 @@ const completeTransition = (
   const nextDocument = appendEvent(
     evo(document, {
       currentStatusId: () => transition.toStatusId,
-      approvals: approvals =>
-        Array.filter(
-          approvals,
-          approval => approval.statusId !== transition.fromStatusId,
-        ),
       effectLog: effectLog => [...effectLog, ...effects],
     }),
     eventId,
@@ -671,17 +457,6 @@ export const requestTransition = (
         }
       }
 
-      const currentStatus = Option.getOrElse(
-        findStatus(workflow, document.currentStatusId),
-        () => ({
-          id: document.currentStatusId,
-          name: document.currentStatusId,
-          type: 'normal' as const,
-          editPolicy: lockedEditPolicy,
-          approval: undefined,
-        }),
-      )
-
       if (!canActorExecuteTransition(actor, transition)) {
         return {
           document,
@@ -691,75 +466,7 @@ export const requestTransition = (
         }
       }
 
-      if (!isApprovedOutputTransition(currentStatus, transition)) {
-        return completeTransition(document, transition, actor, idPrefix)
-      }
-
-      if (currentStatus.approval === undefined) {
-        return completeTransition(document, transition, actor, idPrefix)
-      }
-
-      if (alreadyApproved(document, currentStatus.id, actor.id)) {
-        return {
-          document,
-          result: 'blocked',
-          message: 'This actor already approved this status',
-          emittedEffects: [],
-        }
-      }
-
-      const maybeRule = nextApprovableRule(
-        currentStatus.approval,
-        document,
-        currentStatus.id,
-        actor,
-      )
-
-      if (Option.isNone(maybeRule)) {
-        return {
-          document,
-          result: 'blocked',
-          message: 'Actor cannot approve this status',
-          emittedEffects: [],
-        }
-      }
-
-      const rule = maybeRule.value
-      const nextApproval: ApprovalRecord = {
-        id: `${idPrefix}-approval`,
-        statusId: currentStatus.id,
-        approvalRuleId: rule.id,
-        actorId: actor.id,
-        roleId: rule.roleId,
-      }
-      const approvals = [...document.approvals, nextApproval]
-      const approvedDocument = appendEvent(
-        evo(document, { approvals: () => approvals }),
-        idPrefix,
-        `${actor.name} approved ${transition.label}`,
-      )
-
-      if (
-        areMatchingApprovalRulesComplete(
-          currentStatus.approval,
-          approvedDocument,
-          currentStatus.id,
-        )
-      ) {
-        return completeTransition(
-          approvedDocument,
-          transition,
-          actor,
-          `${idPrefix}-complete`,
-        )
-      }
-
-      return {
-        document: approvedDocument,
-        result: 'approvalRecorded',
-        message: 'Approval recorded; waiting for more approvals',
-        emittedEffects: [],
-      }
+      return completeTransition(document, transition, actor, idPrefix)
     },
   })
 
@@ -819,60 +526,5 @@ export const validateWorkflow = (
       }),
     ]),
   )
-  const approvalProblems = pipe(
-    workflow.statuses,
-    Array.flatMap(status => {
-      if (status.type !== 'approval') {
-        return status.approval === undefined
-          ? []
-          : [`${status.name} is not an approval status but has approval rules`]
-      }
-
-      if (status.approval === undefined) {
-        return [`${status.name} is an approval status but has no approval rules`]
-      }
-
-      const outgoingTransitions = Array.filter(
-        workflow.transitions,
-        transition => transition.fromStatusId === status.id,
-      )
-      const outputProblems =
-        outgoingTransitions.length === 2
-          ? []
-          : [`${status.name} approval status must have exactly two outputs`]
-      const approvedProblems = Option.match(
-        findTransition(workflow, status.approval.approvedTransitionId),
-        {
-          onNone: () => [`${status.name} approval status has a missing approved transition`],
-          onSome: transition =>
-            transition.fromStatusId === status.id
-              ? []
-              : [`${status.name} approved transition must start from itself`],
-        },
-      )
-      const rejectedProblems = Option.match(
-        findTransition(workflow, status.approval.rejectedTransitionId),
-        {
-          onNone: () => [`${status.name} approval status has a missing rejected transition`],
-          onSome: transition =>
-            transition.fromStatusId === status.id
-              ? []
-              : [`${status.name} rejected transition must start from itself`],
-        },
-      )
-      const duplicateOutputProblems =
-        status.approval.approvedTransitionId === status.approval.rejectedTransitionId
-          ? [`${status.name} approval outputs must be distinct`]
-          : []
-
-      return [
-        ...outputProblems,
-        ...approvedProblems,
-        ...rejectedProblems,
-        ...duplicateOutputProblems,
-      ]
-    }),
-  )
-
-  return [...missingInitial, ...transitionProblems, ...approvalProblems]
+  return [...missingInitial, ...transitionProblems]
 }

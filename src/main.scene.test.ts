@@ -15,6 +15,9 @@ describe('workflow scene', () => {
       Scene.expect(Scene.role('region', { name: 'Workflow canvas' })).toExist(),
       Scene.expect(Scene.role('button', { name: 'Menu' })).toBeAbsent(),
       Scene.expect(Scene.role('button', { name: 'Undo' })).toExist(),
+      Scene.expect(
+        Scene.role('button', { name: 'Apply default flow' }),
+      ).toExist(),
       Scene.expect(Scene.role('button', { name: 'Save preview' })).toExist(),
       Scene.expect(Scene.role('button', { name: 'Publish' })).toExist(),
       Scene.expect(Scene.role('button', { name: 'Reset view' })).toExist(),
@@ -40,6 +43,9 @@ describe('workflow scene', () => {
       Scene.expect(
         Scene.role('button', { name: 'Delete status' }),
       ).toBeAbsent(),
+      Scene.expect(
+        Scene.role('button', { name: 'Create transition from Pending Approval' }),
+      ).toExist(),
     )
   })
 
@@ -140,12 +146,10 @@ describe('workflow scene', () => {
         Scene.role('button', { name: 'Create transition from Cancelled' }),
       ).toBeAbsent(),
       Scene.pointerDown(
-        Scene.role('button', {
-          name: 'Create transition from Pending Approval',
-        }),
+        Scene.role('button', { name: 'Create transition from Approved' }),
       ),
       Scene.pointerUp(
-        Scene.role('button', { name: 'Create transition to Approved' }),
+        Scene.role('button', { name: 'Create transition to Rejected' }),
       ),
       Scene.Command.expectHas(SaveWorkspace),
       Scene.expect(
@@ -155,27 +159,20 @@ describe('workflow scene', () => {
     )
   })
 
-  test('adds an approval rule from the status inspector', () => {
+  test('shows transitions from the status inspector', () => {
     Scene.scene(
       { update, view },
       Scene.with(defaultModel()),
       Scene.click(Scene.role('button', { name: 'Select Pending Approval' })),
       Scene.expect(Scene.text('Transitions')).toExist(),
-      Scene.expect(Scene.text('-> Approved')).toExist(),
+      Scene.expect(Scene.text('Approved')).toExist(),
       Scene.expect(
         Scene.role('button', { name: 'Delete transition to Approved' }),
       ).toExist(),
-      Scene.expect(Scene.role('button', { name: 'Add rule' })).toExist(),
-      Scene.click(Scene.role('button', { name: 'Add rule' })),
-      Scene.Command.expectHas(SaveWorkspace),
-      Scene.expect(
-        Scene.text('OrderModerator approves amounts from 10001'),
-      ).toExist(),
-      Scene.Command.resolve(SaveWorkspace, CompletedSaveWorkspace()),
     )
   })
 
-  test('adds an approval rule on a newly created approval status', () => {
+  test('updates behavior on a newly created status', () => {
     Scene.scene(
       { update, view },
       Scene.with(defaultModel()),
@@ -190,15 +187,9 @@ describe('workflow scene', () => {
         Scene.role('heading', { name: 'Status Inspector' }),
       ).toBeAbsent(),
       Scene.click(Scene.role('button', { name: 'Select New status 100' })),
-      Scene.change(Scene.label('Behavior'), 'approval'),
+      Scene.change(Scene.label('Behavior'), 'final'),
       Scene.Command.resolve(SaveWorkspace, CompletedSaveWorkspace()),
-      Scene.expect(Scene.text('OrderModerator approves all amounts')).toExist(),
-      Scene.click(Scene.role('button', { name: 'Add rule' })),
-      Scene.Command.expectHas(SaveWorkspace),
-      Scene.expect(
-        Scene.text('OrderModerator approves amounts from 10001'),
-      ).toExist(),
-      Scene.Command.resolve(SaveWorkspace, CompletedSaveWorkspace()),
+      Scene.expect(Scene.text('Final')).toExist(),
     )
   })
 
@@ -212,7 +203,7 @@ describe('workflow scene', () => {
       Scene.Command.expectHas(SaveWorkspace),
       Scene.expect(
         Scene.role('button', { name: 'Items: OrderCreator' }),
-      ).toHaveAttr('aria-pressed', 'true'),
+      ).toHaveAttr('aria-pressed', 'false'),
       Scene.Command.resolve(SaveWorkspace, CompletedSaveWorkspace()),
     )
   })

@@ -20,6 +20,37 @@ export type BooleanSetting = {
 export type BooleanSettingType =
   | 'boolean';
 
+export type CompaniesFindManyOutput = {
+  readonly __typename?: 'CompaniesFindManyOutput';
+  readonly items: ReadonlyArray<Company>;
+};
+
+export type Company = {
+  readonly __typename?: 'Company';
+  readonly active: Scalars['Boolean']['output'];
+  readonly id: Scalars['Int']['output'];
+  readonly logoImageLink: Maybe<Scalars['String']['output']>;
+  readonly name: Scalars['String']['output'];
+  readonly pdfFooterText: Maybe<Scalars['String']['output']>;
+  readonly signatureImageLink: Maybe<Scalars['String']['output']>;
+  readonly supplierIds: ReadonlyArray<Scalars['Int']['output']>;
+  readonly taxId: Maybe<Scalars['String']['output']>;
+  readonly useCompanyCatalog: Scalars['Boolean']['output'];
+};
+
+export type CompanyQueries = {
+  readonly __typename?: 'CompanyQueries';
+  /** Get a company by id. */
+  readonly byId: Company;
+  /** Get companies visible to the current user. */
+  readonly findMany: CompaniesFindManyOutput;
+};
+
+
+export type CompanyQueriesByIdArgs = {
+  companyId: Scalars['ID']['input'];
+};
+
 export type CompanySettingsMutations = {
   readonly __typename?: 'CompanySettingsMutations';
   /** Update company settings. Replaces all provided settings. */
@@ -71,47 +102,6 @@ export type DuplicateOrderOutput = {
 
 export type ExecuteFlowTransitionInput = {
   readonly comment: InputMaybe<Scalars['String']['input']>;
-};
-
-export type FlowApprovalAssignee = {
-  readonly __typename?: 'FlowApprovalAssignee';
-  readonly roleId: Maybe<Scalars['String']['output']>;
-  readonly type: Scalars['String']['output'];
-  readonly userId: Maybe<Scalars['Int']['output']>;
-};
-
-export type FlowApprovalAssigneeInput = {
-  readonly roleId: InputMaybe<Scalars['String']['input']>;
-  readonly type: Scalars['String']['input'];
-  readonly userId: InputMaybe<Scalars['Int']['input']>;
-};
-
-export type FlowApprovalConfig = {
-  readonly __typename?: 'FlowApprovalConfig';
-  readonly allowSelfApproval: Scalars['Boolean']['output'];
-  readonly approvedTransitionId: Scalars['ID']['output'];
-  readonly rejectedTransitionId: Scalars['ID']['output'];
-  readonly rules: ReadonlyArray<FlowApprovalRule>;
-};
-
-export type FlowApprovalConfigInput = {
-  readonly allowSelfApproval: Scalars['Boolean']['input'];
-  readonly approvedTransitionId: Scalars['ID']['input'];
-  readonly rejectedTransitionId: Scalars['ID']['input'];
-  readonly rules: ReadonlyArray<FlowApprovalRuleInput>;
-};
-
-export type FlowApprovalRule = {
-  readonly __typename?: 'FlowApprovalRule';
-  readonly approvers: ReadonlyArray<FlowApprovalAssignee>;
-  readonly id: Scalars['ID']['output'];
-  readonly minAmount: Maybe<Scalars['Float']['output']>;
-};
-
-export type FlowApprovalRuleInput = {
-  readonly approvers: ReadonlyArray<FlowApprovalAssigneeInput>;
-  readonly id: Scalars['ID']['input'];
-  readonly minAmount: InputMaybe<Scalars['Float']['input']>;
 };
 
 export type FlowAvailableTransition = {
@@ -182,8 +172,6 @@ export type FlowEditableActionDefinitionInput = {
 
 export type FlowMutations = {
   readonly __typename?: 'FlowMutations';
-  /** Record a requisition approval and return the updated runtime state. */
-  readonly approveRequisition: FlowRuntimeState;
   /** Archive the active published version. */
   readonly archive: FlowDefinition;
   /** Create a company-owned flow definition draft. */
@@ -194,25 +182,19 @@ export type FlowMutations = {
   readonly executeRequisitionTransition: FlowRuntimeState;
   /** Publish the current draft version. */
   readonly publish: FlowDefinition;
-  /** Record a requisition rejection and return the updated runtime state. */
-  readonly rejectRequisition: FlowRuntimeState;
   /** Update the current draft or create the next draft version. */
   readonly updateDraft: FlowDefinition;
 };
 
 
-export type FlowMutationsApproveRequisitionArgs = {
-  input: InputMaybe<RecordFlowApprovalInput>;
-  requisitionId: Scalars['Int']['input'];
-};
-
-
 export type FlowMutationsArchiveArgs = {
+  companyId: InputMaybe<Scalars['ID']['input']>;
   flowId: Scalars['ID']['input'];
 };
 
 
 export type FlowMutationsCreateArgs = {
+  companyId: InputMaybe<Scalars['ID']['input']>;
   input: CreateFlowDefinitionInput;
 };
 
@@ -232,35 +214,23 @@ export type FlowMutationsExecuteRequisitionTransitionArgs = {
 
 
 export type FlowMutationsPublishArgs = {
+  companyId: InputMaybe<Scalars['ID']['input']>;
   flowId: Scalars['ID']['input'];
-};
-
-
-export type FlowMutationsRejectRequisitionArgs = {
-  input: InputMaybe<RecordFlowApprovalInput>;
-  requisitionId: Scalars['Int']['input'];
 };
 
 
 export type FlowMutationsUpdateDraftArgs = {
+  companyId: InputMaybe<Scalars['ID']['input']>;
   flowId: Scalars['ID']['input'];
   input: UpdateFlowDraftInput;
-};
-
-export type FlowPendingApproval = {
-  readonly __typename?: 'FlowPendingApproval';
-  readonly approvalRuleId: Scalars['ID']['output'];
-  readonly canCurrentUserApprove: Scalars['Boolean']['output'];
-  readonly canCurrentUserReject: Scalars['Boolean']['output'];
-  readonly occurrenceId: Scalars['ID']['output'];
-  readonly recordedApprovals: Scalars['Int']['output'];
-  readonly statusId: Scalars['ID']['output'];
 };
 
 export type FlowQueries = {
   readonly __typename?: 'FlowQueries';
   /** Get available flow definitions. If documentType is omitted, returns all default definitions. */
   readonly definitions: ReadonlyArray<FlowDefinition>;
+  /** Get all persisted versions for a flow definition. */
+  readonly history: ReadonlyArray<FlowDefinition>;
   /** Get evaluated flow state for an order. */
   readonly orderState: Maybe<FlowRuntimeState>;
   /** Get evaluated flow state for a requisition. */
@@ -269,7 +239,14 @@ export type FlowQueries = {
 
 
 export type FlowQueriesDefinitionsArgs = {
+  companyId: InputMaybe<Scalars['ID']['input']>;
   documentType: InputMaybe<FlowDocumentType>;
+};
+
+
+export type FlowQueriesHistoryArgs = {
+  companyId: InputMaybe<Scalars['ID']['input']>;
+  flowId: Scalars['ID']['input'];
 };
 
 
@@ -299,12 +276,10 @@ export type FlowRuntimeState = {
   readonly editPolicy: FlowRuntimeEditPolicy;
   readonly flowId: Scalars['ID']['output'];
   readonly flowVersion: Scalars['Int']['output'];
-  readonly pendingApproval: Maybe<FlowPendingApproval>;
 };
 
 export type FlowStatusDefinition = {
   readonly __typename?: 'FlowStatusDefinition';
-  readonly approval: Maybe<FlowApprovalConfig>;
   readonly editableActions: ReadonlyArray<FlowEditableActionDefinition>;
   readonly id: Scalars['ID']['output'];
   readonly kind: FlowStatusKind;
@@ -312,7 +287,6 @@ export type FlowStatusDefinition = {
 };
 
 export type FlowStatusDefinitionInput = {
-  readonly approval: InputMaybe<FlowApprovalConfigInput>;
   readonly editableActions: ReadonlyArray<FlowEditableActionDefinitionInput>;
   readonly id: Scalars['ID']['input'];
   readonly kind: FlowStatusKind;
@@ -320,7 +294,6 @@ export type FlowStatusDefinitionInput = {
 };
 
 export type FlowStatusKind =
-  | 'approval'
   | 'draft'
   | 'final'
   | 'normal';
@@ -439,12 +412,9 @@ export type PrepareStagedShipmentSourceImageUploadOutput = {
 
 export type Query = {
   readonly __typename?: 'Query';
+  readonly Company: CompanyQueries;
   readonly CompanySettings: CompanySettingsQueries;
   readonly Flow: FlowQueries;
-};
-
-export type RecordFlowApprovalInput = {
-  readonly comment: InputMaybe<Scalars['String']['input']>;
 };
 
 /** All available settings with their current values. */

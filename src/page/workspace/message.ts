@@ -5,6 +5,9 @@ import { Workflow } from '../../domain'
 
 export const ClickedSelectedWorkflow = m('ClickedSelectedWorkflow')
 export const ClickedToggledActionMenu = m('ClickedToggledActionMenu')
+export const UpdatedTargetCompanyId = m('UpdatedTargetCompanyId', {
+  value: S.String,
+})
 export const ClickedSavedPreviewLocal = m('ClickedSavedPreviewLocal')
 export const ClickedUndidFlowChanges = m('ClickedUndidFlowChanges')
 export const SelectedStatus = m('SelectedStatus', { statusId: S.String })
@@ -16,11 +19,14 @@ export const SelectedStatusType = m('SelectedStatusType', {
   statusId: S.String,
   value: Workflow.StatusType,
 })
-export const ClickedToggledStatusActionRole = m('ClickedToggledStatusActionRole', {
-  statusId: S.String,
-  action: Workflow.EditableAction,
-  roleId: S.String,
-})
+export const ClickedToggledStatusActionRole = m(
+  'ClickedToggledStatusActionRole',
+  {
+    statusId: S.String,
+    action: Workflow.EditableAction,
+    roleId: S.String,
+  },
+)
 export const ClickedToggledStatusActionDisclosure = m(
   'ClickedToggledStatusActionDisclosure',
   {
@@ -55,30 +61,9 @@ export const SelectedTransitionToStatus = m('SelectedTransitionToStatus', {
   transitionId: S.String,
   statusId: S.String,
 })
-export const ClickedToggledTransitionApproval = m(
-  'ClickedToggledTransitionApproval',
-  { transitionId: S.String },
-)
 export const ClickedAddedTransition = m('ClickedAddedTransition')
 export const ClickedDeletedTransition = m('ClickedDeletedTransition', {
   transitionId: S.String,
-})
-export const ClickedAddedApprovalRule = m('ClickedAddedApprovalRule', {
-  statusId: S.String,
-})
-export const SelectedApprovalRuleRole = m('SelectedApprovalRuleRole', {
-  statusId: S.String,
-  ruleId: S.String,
-  roleId: S.String,
-})
-export const UpdatedApprovalRuleMinAmount = m('UpdatedApprovalRuleMinAmount', {
-  statusId: S.String,
-  ruleId: S.String,
-  value: S.String,
-})
-export const ClickedRemovedApprovalRule = m('ClickedRemovedApprovalRule', {
-  statusId: S.String,
-  ruleId: S.String,
 })
 export const ClickedAddedTransitionEffect = m('ClickedAddedTransitionEffect', {
   transitionId: S.String,
@@ -149,9 +134,14 @@ export const ClickedZoomedGraphIn = m('ClickedZoomedGraphIn')
 export const ClickedZoomedGraphOut = m('ClickedZoomedGraphOut')
 export const ClickedResetGraphViewport = m('ClickedResetGraphViewport')
 export const ClickedResetWorkspace = m('ClickedResetWorkspace')
+export const ClickedAppliedDefaultFlow = m('ClickedAppliedDefaultFlow')
 export const ClickedLoadedRemoteFlowDefinitions = m(
   'ClickedLoadedRemoteFlowDefinitions',
 )
+export const ClickedRevertedFlowVersion = m('ClickedRevertedFlowVersion', {
+  flowId: S.String,
+  version: S.Number,
+})
 export const ClickedSavedRemoteFlowDraft = m('ClickedSavedRemoteFlowDraft')
 export const ClickedPublishedRemoteFlow = m('ClickedPublishedRemoteFlow')
 export const CompletedSaveWorkspace = m('CompletedSaveWorkspace')
@@ -159,6 +149,20 @@ export const SucceededLoadFlowDefinitions = m('SucceededLoadFlowDefinitions', {
   definitions: S.Array(Workflow.WorkflowDefinition),
 })
 export const FailedLoadFlowDefinitions = m('FailedLoadFlowDefinitions', {
+  error: S.String,
+})
+export const SucceededLoadCompanies = m('SucceededLoadCompanies', {
+  companies: S.Array(
+    S.Struct({ id: S.Number, name: S.String, active: S.Boolean }),
+  ),
+})
+export const FailedLoadCompanies = m('FailedLoadCompanies', {
+  error: S.String,
+})
+export const SucceededLoadFlowHistory = m('SucceededLoadFlowHistory', {
+  definitions: S.Array(Workflow.WorkflowDefinition),
+})
+export const FailedLoadFlowHistory = m('FailedLoadFlowHistory', {
   error: S.String,
 })
 export const SucceededSaveFlowDraft = m('SucceededSaveFlowDraft', {
@@ -177,6 +181,7 @@ export const FailedPublishFlow = m('FailedPublishFlow', {
 export const Message = S.Union([
   ClickedSelectedWorkflow,
   ClickedToggledActionMenu,
+  UpdatedTargetCompanyId,
   ClickedSavedPreviewLocal,
   ClickedUndidFlowChanges,
   SelectedStatus,
@@ -192,13 +197,8 @@ export const Message = S.Union([
   ClickedToggledTransitionRole,
   SelectedTransitionFromStatus,
   SelectedTransitionToStatus,
-  ClickedToggledTransitionApproval,
   ClickedAddedTransition,
   ClickedDeletedTransition,
-  ClickedAddedApprovalRule,
-  SelectedApprovalRuleRole,
-  UpdatedApprovalRuleMinAmount,
-  ClickedRemovedApprovalRule,
   ClickedAddedTransitionEffect,
   ClickedRemovedTransitionEffect,
   SelectedActor,
@@ -220,12 +220,18 @@ export const Message = S.Union([
   ClickedZoomedGraphOut,
   ClickedResetGraphViewport,
   ClickedResetWorkspace,
+  ClickedAppliedDefaultFlow,
   ClickedLoadedRemoteFlowDefinitions,
+  ClickedRevertedFlowVersion,
   ClickedSavedRemoteFlowDraft,
   ClickedPublishedRemoteFlow,
   CompletedSaveWorkspace,
   SucceededLoadFlowDefinitions,
   FailedLoadFlowDefinitions,
+  SucceededLoadCompanies,
+  FailedLoadCompanies,
+  SucceededLoadFlowHistory,
+  FailedLoadFlowHistory,
   SucceededSaveFlowDraft,
   FailedSaveFlowDraft,
   SucceededPublishFlow,

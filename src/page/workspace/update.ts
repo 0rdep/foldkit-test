@@ -12,6 +12,7 @@ import { Workflow } from '../../domain'
 import * as MockBackend from '../../mockBackend'
 import {
   LoadFlowDefinitions,
+  LoadFlowHistory,
   PublishFlow,
   SaveFlowDraft,
   SaveWorkspace,
@@ -65,9 +66,103 @@ const selectedItemExists = (
   return true
 }
 
+const sameFlowVersion = (
+  left: Workflow.WorkflowDefinition,
+  right: Workflow.WorkflowDefinition,
+): boolean => left.id === right.id && left.version === right.version
+
+const sortedFlowHistory = (
+  definitions: ReadonlyArray<Workflow.WorkflowDefinition>,
+): ReadonlyArray<Workflow.WorkflowDefinition> =>
+  [...definitions].sort((left, right) => right.version - left.version)
+
+const upsertFlowHistory = (
+  history: ReadonlyArray<Workflow.WorkflowDefinition>,
+  workflow: Workflow.WorkflowDefinition,
+): ReadonlyArray<Workflow.WorkflowDefinition> =>
+  sortedFlowHistory([
+    workflow,
+    ...Array.filter(
+      history,
+      definition => !sameFlowVersion(definition, workflow),
+    ),
+  ])
+
+const currentHistory = (
+  workflow: Workflow.WorkflowDefinition,
+  definitions: ReadonlyArray<Workflow.WorkflowDefinition>,
+): ReadonlyArray<Workflow.WorkflowDefinition> =>
+  upsertFlowHistory(definitions, workflow)
+
+const targetCompanyIdVariable = (model: Model): string | undefined => {
+  const companyId = model.targetCompanyId.trim()
+
+  return companyId === '' ? undefined : companyId
+}
+
+const targetCompanyIdValueVariable = (value: string): string | undefined => {
+  const companyId = value.trim()
+
+  return companyId === '' ? undefined : companyId
+}
+
+const historyDefinitionMatches = (
+  definition: Workflow.WorkflowDefinition,
+  flowId: string,
+  version: number,
+): boolean => definition.id === flowId && definition.version === version
+
+const workflowFromHistory = (
+  currentWorkflow: Workflow.WorkflowDefinition,
+  historyWorkflow: Workflow.WorkflowDefinition,
+): Workflow.WorkflowDefinition =>
+  evo(historyWorkflow, {
+    id: () => currentWorkflow.id,
+    version: () => currentWorkflow.version,
+    state: () => currentWorkflow.state,
+  })
+
+const applyWorkflowContents = (
+  model: Model,
+  sourceWorkflow: Workflow.WorkflowDefinition,
+  banner: string,
+): UpdateReturn => {
+  const nextWorkflow = workflowFromHistory(model.workflow, sourceWorkflow)
+
+  return saveFlowChange(
+    evo(model, {
+      workflow: () => nextWorkflow,
+      selectedStatusId: selectedStatusId =>
+        Option.isSome(Workflow.findStatus(nextWorkflow, selectedStatusId))
+          ? selectedStatusId
+          : nextWorkflow.initialStatusId,
+      selectedTransitionId: selectedTransitionId =>
+        Option.isSome(
+          Workflow.findTransition(nextWorkflow, selectedTransitionId),
+        )
+          ? selectedTransitionId
+          : (nextWorkflow.transitions[0]?.id ?? ''),
+      selectedItemKind: selectedItemKind =>
+        selectedItemExists(nextWorkflow, selectedItemKind, model.selectedItemId)
+          ? selectedItemKind
+          : 'Workflow',
+      selectedItemId: selectedItemId =>
+        selectedItemExists(nextWorkflow, model.selectedItemKind, selectedItemId)
+          ? selectedItemId
+          : '',
+      isActionMenuOpen: () => false,
+      graphContextMenuState: () => GraphContextMenuClosed(),
+      banner: () => banner,
+    }),
+    model,
+  )
+}
+
 const workspaceCommand = (model: Model): Command.Command<Message> =>
   SaveWorkspace({
     workflow: model.workflow,
+    flowHistory: model.flowHistory,
+    targetCompanyId: model.targetCompanyId,
     actors: model.actors,
     documents: model.documents,
     nextSequence: model.nextSequence,
@@ -96,6 +191,9 @@ const refreshExchange = (model: Model): Model => {
 const resetModel = (): Model =>
   refreshExchange({
     workflow: DEFAULT_WORKFLOW,
+    flowHistory: [DEFAULT_WORKFLOW],
+    targetCompanyId: '',
+    companies: [],
     actors: DEFAULT_ACTORS,
     documents: DEFAULT_DOCUMENTS,
     nextSequence: DEFAULT_NEXT_SEQUENCE,
@@ -188,61 +286,11 @@ const toggleTransitionRole = (
         : [...allowedRoles, roleId],
   })
 
-const nextApprovalRuleMinAmount = (
-  rules: ReadonlyArray<Workflow.ApprovalRule>,
-): number =>
-  Array.reduce(rules, 1, (nextMinAmount, rule) =>
-    Math.max(nextMinAmount, rule.minAmount + 10000),
-  )
-
-const updateApprovalRule = (
-  status: Workflow.Status,
-  ruleId: string,
-  f: (rule: Workflow.ApprovalRule) => Workflow.ApprovalRule,
-): Workflow.Status =>
-  evo(statusWithApprovalField(status), {
-    approval: approval => {
-      if (approval === undefined) {
-        return undefined
-      }
-
-      return evo(approval, {
-        rules: rules =>
-          Array.map(rules, rule => (rule.id === ruleId ? f(rule) : rule)),
-      })
-    },
-  })
-
-const statusWithApprovalField = (status: Workflow.Status): Workflow.Status =>
-  Workflow.Status.make({
-    id: status.id,
-    name: status.name,
-    type: status.type,
-    editPolicy: status.editPolicy,
-    approval: status.approval,
-  })
-
-const approvalOutputTransitionIds = (
-  workflow: Workflow.WorkflowDefinition,
-  statusId: string,
-): { approvedTransitionId: string; rejectedTransitionId: string } => {
-  const outgoingTransitions = Array.filter(
-    workflow.transitions,
-    transition => transition.fromStatusId === statusId,
-  )
-
-  return {
-    approvedTransitionId: outgoingTransitions[0]?.id ?? '',
-    rejectedTransitionId: outgoingTransitions[1]?.id ?? outgoingTransitions[0]?.id ?? '',
-  }
-}
-
 const nextStatus = (model: Model): Workflow.Status => ({
   id: `status-${model.nextSequence}`,
   name: `New status ${model.nextSequence}`,
   type: 'normal',
   editPolicy: Workflow.unlockedEditPolicy,
-  approval: undefined,
 })
 
 const nextTransition = (model: Model): Workflow.Transition => ({
@@ -327,7 +375,6 @@ const resetDocumentsInDeletedStatus = (
 
     return evo(document, {
       currentStatusId: () => initialStatusId,
-      approvals: () => [],
     })
   })
 
@@ -369,6 +416,27 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         }),
         [],
       ],
+
+      UpdatedTargetCompanyId: ({ value }) => {
+        const nextModel = evo(model, {
+          targetCompanyId: () => value,
+          flowHistory: () => [],
+          banner: () => '',
+          isActionMenuOpen: () => false,
+          graphContextMenuState: () => GraphContextMenuClosed(),
+        })
+
+        return [
+          nextModel,
+          [
+            workspaceCommand(nextModel),
+            LoadFlowDefinitions({
+              documentType: 'requisition',
+              companyId: targetCompanyIdValueVariable(value),
+            }),
+          ],
+        ]
+      },
 
       ClickedSavedPreviewLocal: () => [
         evo(model, {
@@ -447,36 +515,10 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           evo(model, {
             workflow: workflow =>
               Workflow.updateStatus(workflow, statusId, status =>
-                evo(statusWithApprovalField(status), {
+                evo(status, {
                   type: () => value,
-                  approval: () => {
-                    if (value !== 'approval') {
-                      return undefined
-                    }
-                    if (status.approval !== undefined) {
-                      return status.approval
-                    }
-                    const approvalOutputs = approvalOutputTransitionIds(
-                      workflow,
-                      statusId,
-                    )
-                    return {
-                      allowSelfApproval: true,
-                      approvedTransitionId: approvalOutputs.approvedTransitionId,
-                      rejectedTransitionId: approvalOutputs.rejectedTransitionId,
-                      rules: [
-                        {
-                          id: `rule-${model.nextSequence}`,
-                          minAmount: 1,
-                          roleId: 'OrderModerator',
-                        },
-                      ],
-                    }
-                  },
                 }),
               ),
-            nextSequence:
-              value === 'approval' ? value => value + 1 : value => value,
             banner: () => 'Status behavior updated',
           }),
           model,
@@ -635,13 +677,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           model,
         ),
 
-      ClickedToggledTransitionApproval: () => [
-        evo(model, {
-          banner: () => 'Approval is configured on approval statuses',
-        }),
-        [],
-      ],
-
       ClickedAddedTransition: () => {
         const transition = nextTransition(model)
         return saveFlowChange(
@@ -695,97 +730,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         )
       },
 
-      ClickedAddedApprovalRule: ({ statusId }) =>
-        saveFlowChange(
-          evo(model, {
-            workflow: workflow =>
-              Workflow.updateStatus(workflow, statusId, status => {
-                const approvalOutputs = approvalOutputTransitionIds(
-                  workflow,
-                  statusId,
-                )
-                const approval = status.approval ?? {
-                  allowSelfApproval: true,
-                  approvedTransitionId: approvalOutputs.approvedTransitionId,
-                  rejectedTransitionId: approvalOutputs.rejectedTransitionId,
-                  rules: [],
-                }
-                const minAmount = nextApprovalRuleMinAmount(approval.rules)
-
-                return evo(statusWithApprovalField(status), {
-                  type: () => 'approval',
-                  approval: () =>
-                    evo(approval, {
-                      rules: rules => [
-                        ...rules,
-                        {
-                          id: `rule-${model.nextSequence}`,
-                          minAmount,
-                          roleId: 'OrderModerator',
-                        },
-                      ],
-                    }),
-                })
-              }),
-            nextSequence: value => value + 1,
-            banner: () => 'Approval rule added',
-          }),
-          model,
-        ),
-
-      SelectedApprovalRuleRole: ({ statusId, ruleId, roleId }) =>
-        saveFlowChange(
-          evo(model, {
-            workflow: workflow =>
-              Workflow.updateStatus(workflow, statusId, status =>
-                updateApprovalRule(status, ruleId, rule =>
-                  evo(rule, { roleId: () => roleId }),
-                ),
-              ),
-            banner: () => 'Approval role updated',
-          }),
-          model,
-        ),
-
-      UpdatedApprovalRuleMinAmount: ({ statusId, ruleId, value }) =>
-        saveFlowChange(
-          evo(model, {
-            workflow: workflow =>
-              Workflow.updateStatus(workflow, statusId, status =>
-                updateApprovalRule(status, ruleId, rule =>
-                  evo(rule, {
-                    minAmount: minAmount => parseNumberInput(value, minAmount),
-                  }),
-                ),
-              ),
-            banner: () => 'Approval minimum amount updated',
-          }),
-          model,
-        ),
-
-      ClickedRemovedApprovalRule: ({ statusId, ruleId }) =>
-        saveFlowChange(
-          evo(model, {
-            workflow: workflow =>
-              Workflow.updateStatus(workflow, statusId, status =>
-                evo(statusWithApprovalField(status), {
-                  approval: approval => {
-                    if (approval === undefined) {
-                      return undefined
-                    }
-
-                    return evo(approval, {
-                      rules: rules =>
-                        Array.filter(rules, rule => rule.id !== ruleId),
-                    })
-                  },
-                }),
-              ),
-            banner: () => 'Approval rule removed',
-          }),
-          model,
-        ),
-
       ClickedAddedTransitionEffect: ({ transitionId, effectType }) =>
         saveFlowChange(
           evo(model, {
@@ -833,7 +777,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           updateSelectedDocument(model, documentId, document =>
             evo(document, {
               amount: amount => parseNumberInput(value, amount),
-              approvals: () => [],
             }),
           ),
         ),
@@ -843,7 +786,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           updateSelectedDocument(model, documentId, document =>
             evo(document, {
               currentStatusId: () => statusId,
-              approvals: () => [],
             }),
           ),
         ),
@@ -913,8 +855,8 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       PressedTransitionOutput: ({ statusId, screenX, screenY }) =>
         Option.match(Workflow.findStatus(model.workflow, statusId), {
           onNone: () => [model, []],
-          onSome: status =>
-            canCreateTransitionFromStatus(status)
+          onSome: status => {
+            return canCreateTransitionFromStatus(status)
               ? [
                   evo(model, {
                     transitionDragState: () =>
@@ -931,7 +873,8 @@ export const update = (model: Model, message: Message): UpdateReturn =>
                   }),
                   [],
                 ]
-              : [model, []],
+              : [model, []]
+          },
         }),
 
       MovedGraphCanvasPointer: ({ screenX, screenY }) => {
@@ -999,10 +942,12 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           return [model, []]
         }
 
+        const transitionDragState = model.transitionDragState
+
         if (
           !canCreateTransitionBetween(
             model.workflow,
-            model.transitionDragState.fromStatusId,
+            transitionDragState.fromStatusId,
             statusId,
           )
         ) {
@@ -1014,7 +959,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 
         const transition = nextTransitionBetween(
           model,
-          model.transitionDragState.fromStatusId,
+          transitionDragState.fromStatusId,
           statusId,
         )
         const nextModel = evo(model, {
@@ -1107,14 +1052,41 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 
       ClickedResetWorkspace: () => withSavedWorkspace(resetModel()),
 
+      ClickedAppliedDefaultFlow: () =>
+        applyWorkflowContents(model, DEFAULT_WORKFLOW, 'Default flow applied'),
+
       ClickedLoadedRemoteFlowDefinitions: () => [
         evo(model, {
           banner: () => '',
           isActionMenuOpen: () => false,
           graphContextMenuState: () => GraphContextMenuClosed(),
         }),
-        [LoadFlowDefinitions({ documentType: 'requisition' })],
+        [
+          LoadFlowDefinitions({
+            documentType: 'requisition',
+            companyId: targetCompanyIdVariable(model),
+          }),
+        ],
       ],
+
+      ClickedRevertedFlowVersion: ({ flowId, version }) =>
+        pipe(
+          Array.findFirst(model.flowHistory, definition =>
+            historyDefinitionMatches(definition, flowId, version),
+          ),
+          Option.match({
+            onNone: () => [
+              evo(model, { banner: () => 'Flow version not found in history' }),
+              [],
+            ],
+            onSome: historyWorkflow =>
+              applyWorkflowContents(
+                model,
+                historyWorkflow,
+                `Reverted draft contents to version ${historyWorkflow.version}`,
+              ),
+          }),
+        ),
 
       ClickedSavedRemoteFlowDraft: () => [
         evo(model, {
@@ -1126,6 +1098,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           SaveFlowDraft({
             flowId: model.workflow.id,
             workflow: model.workflow,
+            companyId: targetCompanyIdVariable(model),
           }),
         ],
       ],
@@ -1136,7 +1109,13 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           isActionMenuOpen: () => false,
           graphContextMenuState: () => GraphContextMenuClosed(),
         }),
-        [PublishFlow({ flowId: model.workflow.id, workflow: model.workflow })],
+        [
+          PublishFlow({
+            flowId: model.workflow.id,
+            workflow: model.workflow,
+            companyId: targetCompanyIdVariable(model),
+          }),
+        ],
       ],
 
       CompletedSaveWorkspace: () => [model, []],
@@ -1149,10 +1128,11 @@ export const update = (model: Model, message: Message): UpdateReturn =>
             evo(model, { banner: () => 'No remote flow definitions returned' }),
             [],
           ],
-          onSome: workflow =>
-            saveAndRefresh(
+          onSome: workflow => {
+            const nextModel = refreshExchange(
               evo(model, {
                 workflow: () => workflow,
+                flowHistory: () => currentHistory(workflow, definitions),
                 selectedStatusId: () => workflow.initialStatusId,
                 selectedTransitionId: () => workflow.transitions[0]?.id ?? '',
                 selectedItemKind: () => 'Workflow',
@@ -1164,7 +1144,19 @@ export const update = (model: Model, message: Message): UpdateReturn =>
                 undoStack: () => [],
                 banner: () => '',
               }),
-            ),
+            )
+
+            return [
+              nextModel,
+              [
+                workspaceCommand(nextModel),
+                LoadFlowHistory({
+                  flowId: workflow.id,
+                  companyId: targetCompanyIdVariable(model),
+                }),
+              ],
+            ]
+          },
         })
       },
 
@@ -1173,36 +1165,108 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         [],
       ],
 
-      SucceededSaveFlowDraft: ({ workflow }) =>
-        withSavedWorkspace(
-          refreshExchange(
-            evo(model, {
-              workflow: () => workflow,
-              isPreviewSaved: () => true,
-              isDirty: () => false,
-              undoStack: () => [],
-              banner: () => '',
+      SucceededLoadCompanies: ({ companies }) => {
+        const selectedCompanyExists = Array.some(
+          companies,
+          company => `${company.id}` === model.targetCompanyId,
+        )
+        const selectedCompanyId = selectedCompanyExists
+          ? model.targetCompanyId
+          : `${companies[0]?.id ?? ''}`
+        const nextModel = evo(model, {
+          companies: () => companies,
+          targetCompanyId: () => selectedCompanyId,
+          flowHistory: flowHistory =>
+            selectedCompanyId === model.targetCompanyId ? flowHistory : [],
+        })
+
+        if (selectedCompanyId === '' || selectedCompanyId === model.targetCompanyId) {
+          return [nextModel, []]
+        }
+
+        return [
+          nextModel,
+          [
+            workspaceCommand(nextModel),
+            LoadFlowDefinitions({
+              documentType: 'requisition',
+              companyId: selectedCompanyId,
             }),
-          ),
-        ),
+          ],
+        ]
+      },
+
+      FailedLoadCompanies: ({ error }) => [
+        evo(model, { banner: () => `Failed to load companies: ${error}` }),
+        [],
+      ],
+
+      SucceededLoadFlowHistory: ({ definitions }) => [
+        evo(model, {
+          flowHistory: () => currentHistory(model.workflow, definitions),
+        }),
+        [],
+      ],
+
+      FailedLoadFlowHistory: ({ error }) => [
+        evo(model, { banner: () => `Failed to load flow history: ${error}` }),
+        [],
+      ],
+
+      SucceededSaveFlowDraft: ({ workflow }) => {
+        const nextModel = refreshExchange(
+          evo(model, {
+            workflow: () => workflow,
+            flowHistory: flowHistory =>
+              upsertFlowHistory(flowHistory, workflow),
+            isPreviewSaved: () => true,
+            isDirty: () => false,
+            undoStack: () => [],
+            banner: () => '',
+          }),
+        )
+
+        return [
+          nextModel,
+          [
+            workspaceCommand(nextModel),
+            LoadFlowHistory({
+              flowId: workflow.id,
+              companyId: targetCompanyIdVariable(model),
+            }),
+          ],
+        ]
+      },
 
       FailedSaveFlowDraft: ({ error }) => [
         evo(model, { banner: () => `Failed to save flow draft: ${error}` }),
         [],
       ],
 
-      SucceededPublishFlow: ({ workflow }) =>
-        withSavedWorkspace(
-          refreshExchange(
-            evo(model, {
-              workflow: () => workflow,
-              isPreviewSaved: () => false,
-              isDirty: () => false,
-              undoStack: () => [],
-              banner: () => '',
+      SucceededPublishFlow: ({ workflow }) => {
+        const nextModel = refreshExchange(
+          evo(model, {
+            workflow: () => workflow,
+            flowHistory: flowHistory =>
+              upsertFlowHistory(flowHistory, workflow),
+            isPreviewSaved: () => false,
+            isDirty: () => false,
+            undoStack: () => [],
+            banner: () => '',
+          }),
+        )
+
+        return [
+          nextModel,
+          [
+            workspaceCommand(nextModel),
+            LoadFlowHistory({
+              flowId: workflow.id,
+              companyId: targetCompanyIdVariable(model),
             }),
-          ),
-        ),
+          ],
+        ]
+      },
 
       FailedPublishFlow: ({ error }) => [
         evo(model, { banner: () => `Failed to publish flow: ${error}` }),

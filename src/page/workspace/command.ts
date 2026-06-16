@@ -10,23 +10,32 @@ import {
   toUpdateFlowDraftInput,
   toWorkflowDefinition,
 } from '../../graphql/flow-adapter'
-import type { FlowDocumentType, UpdateFlowDraftInput } from '../../graphql/generated'
-import type {
-  FlowDefinitionFieldsFragment,
-  FlowDefinitionsQuery,
-  FlowDefinitionsQueryVariables,
-} from '../../graphql/operations-generated'
+import type { UpdateFlowDraftInput } from '../../graphql/generated'
 import {
+  CompanyFindManyQueryText,
+  FlowDefinitionHistoryQueryText,
   FlowDefinitionsQueryText,
   PublishFlowMutationText,
   UpdateFlowDraftMutationText,
 } from '../../graphql/operations'
+import type {
+  CompanyFindManyQuery,
+  FlowDefinitionFieldsFragment,
+  FlowDefinitionHistoryQuery,
+  FlowDefinitionHistoryQueryVariables,
+  FlowDefinitionsQuery,
+  FlowDefinitionsQueryVariables,
+} from '../../graphql/operations-generated'
 import {
   CompletedSaveWorkspace,
+  FailedLoadCompanies,
   FailedLoadFlowDefinitions,
-  FailedSaveFlowDraft,
+  FailedLoadFlowHistory,
   FailedPublishFlow,
+  FailedSaveFlowDraft,
+  SucceededLoadCompanies,
   SucceededLoadFlowDefinitions,
+  SucceededLoadFlowHistory,
   SucceededPublishFlow,
   SucceededSaveFlowDraft,
 } from './message'
@@ -41,6 +50,7 @@ type UpdateFlowDraftResponse = {
 type UpdateFlowDraftVariables = {
   readonly flowId: string
   readonly input: UpdateFlowDraftInput
+  readonly companyId?: string | undefined
 }
 
 type PublishFlowResponse = {
@@ -51,12 +61,17 @@ type PublishFlowResponse = {
 
 type PublishFlowVariables = {
   readonly flowId: string
+  readonly companyId?: string | undefined
 }
+
+type EmptyVariables = Record<string, never>
 
 export const SaveWorkspace = Command.define(
   'SaveWorkspace',
   {
     workflow: Workflow.WorkflowDefinition,
+    flowHistory: S.Array(Workflow.WorkflowDefinition),
+    targetCompanyId: S.String,
     actors: S.Array(Workflow.Actor),
     documents: S.Array(Workflow.DocumentInstance),
     nextSequence: S.Number,
@@ -78,12 +93,15 @@ export const SaveWorkspace = Command.define(
 
 export const LoadFlowDefinitions = Command.define(
   'LoadFlowDefinitions',
-  { documentType: S.Literals(['requisition', 'order']) },
+  {
+    documentType: S.Literals(['requisition', 'order']),
+    companyId: S.optional(S.String),
+  },
   S.Union([SucceededLoadFlowDefinitions, FailedLoadFlowDefinitions]),
-)(({ documentType }) =>
+)(({ documentType, companyId }) =>
   Graphql.request<FlowDefinitionsQuery, FlowDefinitionsQueryVariables>(
     FlowDefinitionsQueryText,
-    { documentType: documentType as FlowDocumentType },
+    { documentType, companyId: companyId ?? null },
   ).pipe(
     Effect.map(data =>
       SucceededLoadFlowDefinitions({
@@ -96,14 +114,61 @@ export const LoadFlowDefinitions = Command.define(
   ),
 )
 
+export const LoadCompanies = Command.define(
+  'LoadCompanies',
+  S.Union([SucceededLoadCompanies, FailedLoadCompanies]),
+)(
+  Graphql.request<CompanyFindManyQuery, EmptyVariables>(
+    CompanyFindManyQueryText,
+    {},
+  ).pipe(
+    Effect.map(data =>
+      SucceededLoadCompanies({
+        companies: data.Company.findMany.items.map(company => ({
+          id: company.id,
+          name: company.name,
+          active: company.active,
+        })),
+      }),
+    ),
+    Effect.catch((error: string) =>
+      Effect.succeed(FailedLoadCompanies({ error })),
+    ),
+  )
+)
+
+export const LoadFlowHistory = Command.define(
+  'LoadFlowHistory',
+  { flowId: S.String, companyId: S.optional(S.String) },
+  S.Union([SucceededLoadFlowHistory, FailedLoadFlowHistory]),
+)(({ flowId, companyId }) =>
+  Graphql.request<
+    FlowDefinitionHistoryQuery,
+    FlowDefinitionHistoryQueryVariables
+  >(FlowDefinitionHistoryQueryText, { flowId, companyId: companyId ?? null }).pipe(
+    Effect.map(data =>
+      SucceededLoadFlowHistory({
+        definitions: data.Flow.history.map(toWorkflowDefinition),
+      }),
+    ),
+    Effect.catch((error: string) =>
+      Effect.succeed(FailedLoadFlowHistory({ error })),
+    ),
+  ),
+)
+
 export const SaveFlowDraft = Command.define(
   'SaveFlowDraft',
-  { flowId: S.String, workflow: Workflow.WorkflowDefinition },
+  {
+    flowId: S.String,
+    workflow: Workflow.WorkflowDefinition,
+    companyId: S.optional(S.String),
+  },
   S.Union([SucceededSaveFlowDraft, FailedSaveFlowDraft]),
-)(({ flowId, workflow }) =>
+)(({ flowId, workflow, companyId }) =>
   Graphql.request<UpdateFlowDraftResponse, UpdateFlowDraftVariables>(
     UpdateFlowDraftMutationText,
-    { flowId, input: toUpdateFlowDraftInput(workflow) },
+    { flowId, input: toUpdateFlowDraftInput(workflow), companyId },
   ).pipe(
     Effect.map(data =>
       SucceededSaveFlowDraft({
@@ -118,17 +183,21 @@ export const SaveFlowDraft = Command.define(
 
 export const PublishFlow = Command.define(
   'PublishFlow',
-  { flowId: S.String, workflow: Workflow.WorkflowDefinition },
+  {
+    flowId: S.String,
+    workflow: Workflow.WorkflowDefinition,
+    companyId: S.optional(S.String),
+  },
   S.Union([SucceededPublishFlow, FailedPublishFlow]),
-)(({ flowId, workflow }) =>
+)(({ flowId, workflow, companyId }) =>
   Graphql.request<UpdateFlowDraftResponse, UpdateFlowDraftVariables>(
     UpdateFlowDraftMutationText,
-    { flowId, input: toUpdateFlowDraftInput(workflow) },
+    { flowId, input: toUpdateFlowDraftInput(workflow), companyId },
   ).pipe(
     Effect.flatMap(data =>
       Graphql.request<PublishFlowResponse, PublishFlowVariables>(
         PublishFlowMutationText,
-        { flowId: data.Flow.updateDraft.id },
+        { flowId: data.Flow.updateDraft.id, companyId },
       ),
     ),
     Effect.map(data =>

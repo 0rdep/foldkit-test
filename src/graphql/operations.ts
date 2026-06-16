@@ -1,7 +1,21 @@
+export const CompanyFindManyQueryText = `#graphql
+query CompanyFindMany {
+  Company {
+    findMany {
+      items {
+        id
+        name
+        active
+      }
+    }
+  }
+}
+`
+
 export const FlowDefinitionsQueryText = `#graphql
-query FlowDefinitions($documentType: FlowDocumentType) {
+query FlowDefinitions($documentType: FlowDocumentType, $companyId: ID) {
   Flow {
-    definitions(documentType: $documentType) {
+    definitions(documentType: $documentType, companyId: $companyId) {
       ...FlowDefinitionFields
     }
   }
@@ -22,20 +36,6 @@ fragment FlowDefinitionFields on FlowDefinition {
     editableActions {
       action
       allowedRoles
-    }
-    approval {
-      allowSelfApproval
-      approvedTransitionId
-      rejectedTransitionId
-      rules {
-        id
-        minAmount
-        approvers {
-          type
-          userId
-          roleId
-        }
-      }
     }
   }
   transitions {
@@ -51,9 +51,9 @@ fragment FlowDefinitionFields on FlowDefinition {
 `
 
 export const UpdateFlowDraftMutationText = `#graphql
-mutation UpdateFlowDraft($flowId: ID!, $input: UpdateFlowDraftInput!) {
+mutation UpdateFlowDraft($flowId: ID!, $input: UpdateFlowDraftInput!, $companyId: ID) {
   Flow {
-    updateDraft(flowId: $flowId, input: $input) {
+    updateDraft(flowId: $flowId, input: $input, companyId: $companyId) {
       ...FlowDefinitionFields
     }
   }
@@ -75,19 +75,43 @@ fragment FlowDefinitionFields on FlowDefinition {
       action
       allowedRoles
     }
-    approval {
-      allowSelfApproval
-      approvedTransitionId
-      rejectedTransitionId
-      rules {
-        id
-        minAmount
-        approvers {
-          type
-          userId
-          roleId
-        }
-      }
+  }
+  transitions {
+    id
+    label
+    fromStatusId
+    toStatusId
+    allowedRoles
+    requiresComment
+    sortOrder
+  }
+}
+`
+
+export const FlowDefinitionHistoryQueryText = `#graphql
+query FlowDefinitionHistory($flowId: ID!, $companyId: ID) {
+  Flow {
+    history(flowId: $flowId, companyId: $companyId) {
+      ...FlowDefinitionFields
+    }
+  }
+}
+
+fragment FlowDefinitionFields on FlowDefinition {
+  id
+  companyId
+  documentType
+  name
+  version
+  state
+  initialStatusId
+  statuses {
+    id
+    name
+    kind
+    editableActions {
+      action
+      allowedRoles
     }
   }
   transitions {
@@ -103,9 +127,9 @@ fragment FlowDefinitionFields on FlowDefinition {
 `
 
 export const PublishFlowMutationText = `#graphql
-mutation PublishFlow($flowId: ID!) {
+mutation PublishFlow($flowId: ID!, $companyId: ID) {
   Flow {
-    publish(flowId: $flowId) {
+    publish(flowId: $flowId, companyId: $companyId) {
       ...FlowDefinitionFields
     }
   }
@@ -126,20 +150,6 @@ fragment FlowDefinitionFields on FlowDefinition {
     editableActions {
       action
       allowedRoles
-    }
-    approval {
-      allowSelfApproval
-      approvedTransitionId
-      rejectedTransitionId
-      rules {
-        id
-        minAmount
-        approvers {
-          type
-          userId
-          roleId
-        }
-      }
     }
   }
   transitions {

@@ -1,13 +1,15 @@
 import { describe, expect, test } from 'vitest'
 
+import { DEFAULT_WORKFLOW } from './constant'
 import { Graph, Workflow } from './domain'
 import { defaultModel } from './main'
 import { CompletedSaveWorkspace } from './message'
 import {
-  ClickedAddedApprovalRule,
+  ClickedAppliedDefaultFlow,
   ClickedDeletedStatus,
   ClickedRequestedTransition,
   ClickedResetGraphViewport,
+  ClickedRevertedFlowVersion,
   ClickedZoomedGraphIn,
   ClickedZoomedGraphOut,
   MovedGraphCanvasPointer,
@@ -16,9 +18,8 @@ import {
   ReleasedGraphCanvasPointer,
   ReleasedTransitionInput,
   SelectedActor,
-  SelectedDocumentStatus,
   SelectedStatus,
-  UpdatedDocumentAmount,
+  SucceededLoadFlowHistory,
 } from './message'
 import { update } from './update'
 
@@ -55,7 +56,6 @@ const nodeCenterY = (node: Graph.GraphNode | undefined): number =>
   node === undefined ? 0 : node.y + node.height / 2
 
 type TestPoint = Readonly<{ x: number; y: number }>
-type TestSegment = Readonly<{ from: TestPoint; to: TestPoint }>
 type TestRect = Readonly<{
   left: number
   top: number
@@ -136,7 +136,7 @@ const pointInsideRect = (point: TestPoint, rect: TestRect): boolean =>
   point.y < rect.bottom
 
 describe('workflow engine update', () => {
-  test('submitting a draft moves the document into the first approval status', () => {
+  test('submitting a draft moves the document into the next normal status', () => {
     const [nextModel, commands] = update(
       defaultModel(),
       ClickedRequestedTransition({ transitionId: 'draft-to-pending-approval' }),
@@ -149,7 +149,7 @@ describe('workflow engine update', () => {
     expect(commands.length).toBe(1)
   })
 
-  test('approval status blocks document edits', () => {
+  test('normal status uses its configured edit policy', () => {
     const [nextModel] = update(
       defaultModel(),
       ClickedRequestedTransition({ transitionId: 'draft-to-pending-approval' }),
@@ -161,18 +161,18 @@ describe('workflow engine update', () => {
     const editPolicy = status?.editPolicy ?? Workflow.lockedEditPolicy
     expect(
       Workflow.canRoleEditAction(editPolicy, 'items', 'OrderCreator'),
-    ).toBe(false)
+    ).toBe(true)
     expect(
       Workflow.canRoleEditAction(editPolicy, 'deliveryDate', 'OrderCreator'),
-    ).toBe(false)
+    ).toBe(true)
   })
 
-  test('manager approval records approval and advances to approved', () => {
-    const [inApproval] = update(
+  test('manager transition advances to approved', () => {
+    const [pending] = update(
       defaultModel(),
       ClickedRequestedTransition({ transitionId: 'draft-to-pending-approval' }),
     )
-    const [asManager] = update(inApproval, SelectedActor({ actorId: 'maria' }))
+    const [asManager] = update(pending, SelectedActor({ actorId: 'maria' }))
     const [nextModel] = update(
       asManager,
       ClickedRequestedTransition({
@@ -183,52 +183,7 @@ describe('workflow engine update', () => {
     expect(documentStatus(nextModel)).toBe('APPROVED')
     expect(
       nextModel.workspace.documents[0]?.eventLog.map(event => event.label),
-    ).toContain('Maria Manager approved Approve')
-  })
-
-  test('high amount approval uses the matching approval rule', () => {
-    const [atApproval] = update(
-      defaultModel(),
-      SelectedDocumentStatus({
-        documentId: 'req-1001',
-        statusId: 'PENDING_APPROVAL',
-      }),
-    )
-    const [asManager] = update(atApproval, SelectedActor({ actorId: 'maria' }))
-    const [nextModel] = update(
-      asManager,
-      ClickedRequestedTransition({
-        transitionId: 'pending-approval-to-approved',
-      }),
-    )
-
-    expect(documentStatus(nextModel)).toBe('APPROVED')
-  })
-
-  test('standard amount approval can finish approval flow', () => {
-    const [atApproval] = update(
-      defaultModel(),
-      SelectedDocumentStatus({
-        documentId: 'req-1001',
-        statusId: 'PENDING_APPROVAL',
-      }),
-    )
-    const [standardAmount] = update(
-      atApproval,
-      UpdatedDocumentAmount({ documentId: 'req-1001', value: '9000' }),
-    )
-    const [asManager] = update(
-      standardAmount,
-      SelectedActor({ actorId: 'maria' }),
-    )
-    const [nextModel] = update(
-      asManager,
-      ClickedRequestedTransition({
-        transitionId: 'pending-approval-to-approved',
-      }),
-    )
-
-    expect(documentStatus(nextModel)).toBe('APPROVED')
+    ).toContain('Maria Manager completed Approve')
   })
 
   test('completed save messages do not change model', () => {
@@ -239,18 +194,80 @@ describe('workflow engine update', () => {
     expect(commands).toStrictEqual([])
   })
 
-  test('adding an approval rule appends a rule to the selected approval status', () => {
+  test('reverting a historical flow version keeps the active draft identity', () => {
     const model = defaultModel()
-    const [nextModel, commands] = update(
-      model,
-      ClickedAddedApprovalRule({ statusId: 'PENDING_APPROVAL' }),
+    const currentWorkflow: Workflow.WorkflowDefinition = {
+      ...model.workspace.workflow,
+      id: 'flow-1',
+      version: 2,
+      state: 'draft',
+    }
+    const previousWorkflow: Workflow.WorkflowDefinition = {
+      ...currentWorkflow,
+      version: 1,
+      state: 'published',
+      statuses: currentWorkflow.statuses.map(status =>
+        status.id === 'DRAFT' ? { ...status, name: 'Old Draft' } : status,
+      ),
+    }
+    const [withHistory] = update(
+      { workspace: { ...model.workspace, workflow: currentWorkflow } },
+      SucceededLoadFlowHistory({ definitions: [previousWorkflow] }),
     )
-    const status = nextModel.workspace.workflow.statuses.find(
-      item => item.id === 'PENDING_APPROVAL',
+    const [reverted, commands] = update(
+      withHistory,
+      ClickedRevertedFlowVersion({ flowId: 'flow-1', version: 1 }),
     )
 
-    expect(status?.approval?.rules.length).toBe(2)
-    expect(status?.approval?.rules[1]?.minAmount).toBe(10001)
+    expect(reverted.workspace.workflow.id).toBe('flow-1')
+    expect(reverted.workspace.workflow.version).toBe(2)
+    expect(reverted.workspace.workflow.state).toBe('draft')
+    expect(
+      reverted.workspace.workflow.statuses.find(status => status.id === 'DRAFT')
+        ?.name,
+    ).toBe('Old Draft')
+    expect(reverted.workspace.isDirty).toBe(true)
+    expect(commands.length).toBe(1)
+  })
+
+  test('applying the default flow keeps the active draft identity', () => {
+    const model = defaultModel()
+    const currentWorkflow: Workflow.WorkflowDefinition = {
+      ...model.workspace.workflow,
+      id: 'flow-1',
+      name: 'Custom draft',
+      version: 2,
+      state: 'draft',
+      initialStatusId: 'CUSTOM',
+      statuses: [graphStatus('CUSTOM', 'Custom status', 'draft')],
+      transitions: [],
+    }
+    const [applied, commands] = update(
+      {
+        workspace: {
+          ...model.workspace,
+          workflow: currentWorkflow,
+          selectedStatusId: 'CUSTOM',
+          selectedItemKind: 'Status',
+          selectedItemId: 'CUSTOM',
+        },
+      },
+      ClickedAppliedDefaultFlow(),
+    )
+
+    expect(applied.workspace.workflow.id).toBe('flow-1')
+    expect(applied.workspace.workflow.version).toBe(2)
+    expect(applied.workspace.workflow.state).toBe('draft')
+    expect(applied.workspace.workflow.initialStatusId).toBe(
+      DEFAULT_WORKFLOW.initialStatusId,
+    )
+    expect(
+      applied.workspace.workflow.statuses.map(status => status.id),
+    ).toEqual(DEFAULT_WORKFLOW.statuses.map(status => status.id))
+    expect(applied.workspace.selectedStatusId).toBe(
+      DEFAULT_WORKFLOW.initialStatusId,
+    )
+    expect(applied.workspace.isDirty).toBe(true)
     expect(commands.length).toBe(1)
   })
 
@@ -295,14 +312,14 @@ describe('workflow engine update', () => {
     const [dragging] = update(
       model,
       PressedTransitionOutput({
-        statusId: 'PENDING_APPROVAL',
+        statusId: 'APPROVED',
         screenX: 100,
         screenY: 100,
       }),
     )
     const [nextModel, commands] = update(
       dragging,
-      ReleasedTransitionInput({ statusId: 'APPROVED' }),
+      ReleasedTransitionInput({ statusId: 'REJECTED' }),
     )
     const transition = nextModel.workspace.workflow.transitions.find(
       item => item.id === `transition-${model.workspace.nextSequence}`,
@@ -311,8 +328,8 @@ describe('workflow engine update', () => {
     expect(dragging.workspace.transitionDragState._tag).toBe(
       'TransitionDragging',
     )
-    expect(transition?.fromStatusId).toBe('PENDING_APPROVAL')
-    expect(transition?.toStatusId).toBe('APPROVED')
+    expect(transition?.fromStatusId).toBe('APPROVED')
+    expect(transition?.toStatusId).toBe('REJECTED')
     expect(nextModel.workspace.selectedTransitionId).toBe(transition?.id)
     expect(nextModel.workspace.selectedItemKind).toBe(
       model.workspace.selectedItemKind,

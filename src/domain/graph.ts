@@ -463,11 +463,11 @@ const isCollinear = (previous: Point, corner: Point, next: Point): boolean =>
   (previous.y === corner.y && corner.y === next.y)
 
 const visualizedRoutePoints = (
-  from: GraphNode,
-  to: GraphNode,
+  input: RoutableTransition,
   searchPoints: ReadonlyArray<Point>,
 ): ReadonlyArray<Point> => {
-  const start = visualStart(from)
+  const start = visualStart(input)
+  const to = input.to
   const end = visualEnd(to)
   const first = searchPoints[0]
   const last = searchPoints[searchPoints.length - 1]
@@ -560,11 +560,17 @@ type RoutableTransition = Readonly<{
   laneIndex: number
 }>
 
-const visualStart = (node: GraphNode): Point =>
-  point(node.x + node.width, node.y + node.height / 2)
+const visualStart = (input: RoutableTransition): Point =>
+  point(
+    input.from.x + input.from.width + 6,
+    input.from.y + input.from.height / 2,
+  )
 
-const routeStart = (node: GraphNode): Point =>
-  point(node.x + node.width + routeObstaclePadding, node.y + node.height / 2)
+const routeStart = (input: RoutableTransition): Point =>
+  point(
+    input.from.x + input.from.width + routeObstaclePadding,
+    input.from.y + input.from.height / 2,
+  )
 
 const visualEnd = (node: GraphNode): Point =>
   point(node.x - edgeTargetGap, node.y + node.height / 2)
@@ -647,10 +653,7 @@ const fallbackAroundNodesRoute = (
   ]
   const clearCandidate = candidates.find(
     candidate =>
-      !routeTouchesNode(
-        visualizedRoutePoints(input.from, input.to, candidate),
-        intermediateNodes,
-      ),
+      !routeTouchesNode(visualizedRoutePoints(input, candidate), intermediateNodes),
   )
 
   return clearCandidate ?? fallbackRoute(start, end)
@@ -808,7 +811,7 @@ const routeGrid = (
   input: RoutableTransition,
   priorSegments: ReadonlyArray<Segment>,
 ): SearchGrid => {
-  const start = routeStart(input.from)
+  const start = routeStart(input)
   const end = routeEnd(input.to)
   const obstacles = nodes.map(node => nodeRect(node, routeObstaclePadding))
   const aroundNodeLanes = nodes.map(node =>
@@ -978,83 +981,92 @@ const routeSearch = (
   bestCosts: ReadonlyMap<string, number>,
   end: Point,
   grid: SearchGrid,
-): Option.Option<ReadonlyArray<Point>> =>
-  Option.match(popLowestPriority(open), {
-    onNone: () => Option.none(),
-    onSome: ({ state, rest }) => {
-      const currentKey = searchStateKey(state)
-      const bestCost = bestCosts.get(currentKey)
+): Option.Option<ReadonlyArray<Point>> => {
+  let pending = open
+  let visited = closed
+  let costs = bestCosts
+  let remainingIterations =
+    grid.xCoordinates.length * grid.yCoordinates.length * 3
 
-      if (
-        closed.has(currentKey) ||
-        (bestCost !== undefined && state.cost > bestCost)
-      ) {
-        return routeSearch(rest, closed, bestCosts, end, grid)
-      }
+  while (remainingIterations > 0) {
+    remainingIterations -= 1
 
-      if (isSamePoint(state.point, end)) {
-        return Option.some(state.path)
-      }
+    const maybePopped = popLowestPriority(pending)
 
-      const nextStates = adjacentCoordinatePoints(state.point, grid).flatMap(
-        nextPoint => {
-          const direction = routeDirection(state.point, nextPoint)
-          const turnCost =
-            state.direction !== 'start' && state.direction !== direction
-              ? routeTurnPenalty
-              : 0
-          const edgeCost = priorSegmentPenalty(
-            segment(state.point, nextPoint),
-            grid.priorSegments,
-          )
-          const cost =
-            state.cost +
-            manhattanDistance(state.point, nextPoint) +
-            turnCost +
-            edgeCost
-          const nextState = {
-            point: nextPoint,
-            direction,
-            cost,
-            priority: cost + manhattanDistance(nextPoint, end),
-            path: [...state.path, nextPoint],
-          }
-          const nextKey = searchStateKey(nextState)
-          const bestNextCost = bestCosts.get(nextKey)
+    if (Option.isNone(maybePopped)) {
+      return Option.none()
+    }
 
-          if (
-            closed.has(nextKey) ||
-            (bestNextCost !== undefined && bestNextCost <= cost)
-          ) {
-            return []
-          }
+    const { state, rest } = maybePopped.value
+    const currentKey = searchStateKey(state)
+    const bestCost = costs.get(currentKey)
 
-          return [nextState]
-        },
-      )
-      const nextClosed = new Set(closed).add(currentKey)
-      const nextBestCosts = nextStates.reduce<ReadonlyMap<string, number>>(
-        (costs, nextState) =>
-          new Map(costs).set(searchStateKey(nextState), nextState.cost),
-        bestCosts,
-      )
+    if (
+      visited.has(currentKey) ||
+      (bestCost !== undefined && state.cost > bestCost)
+    ) {
+      pending = rest
+      continue
+    }
 
-      return routeSearch(
-        [...rest, ...nextStates],
-        nextClosed,
-        nextBestCosts,
-        end,
-        grid,
-      )
-    },
-  })
+    if (isSamePoint(state.point, end)) {
+      return Option.some(state.path)
+    }
+
+    const nextStates = adjacentCoordinatePoints(state.point, grid).flatMap(
+      nextPoint => {
+        const direction = routeDirection(state.point, nextPoint)
+        const turnCost =
+          state.direction !== 'start' && state.direction !== direction
+            ? routeTurnPenalty
+            : 0
+        const edgeCost = priorSegmentPenalty(
+          segment(state.point, nextPoint),
+          grid.priorSegments,
+        )
+        const cost =
+          state.cost +
+          manhattanDistance(state.point, nextPoint) +
+          turnCost +
+          edgeCost
+        const nextState = {
+          point: nextPoint,
+          direction,
+          cost,
+          priority: cost + manhattanDistance(nextPoint, end),
+          path: [...state.path, nextPoint],
+        }
+        const nextKey = searchStateKey(nextState)
+        const bestNextCost = costs.get(nextKey)
+
+        if (
+          visited.has(nextKey) ||
+          (bestNextCost !== undefined && bestNextCost <= cost)
+        ) {
+          return []
+        }
+
+        return [nextState]
+      },
+    )
+    visited = new Set(visited).add(currentKey)
+    costs = nextStates.reduce<ReadonlyMap<string, number>>(
+      (nextCosts, nextState) =>
+        new Map(nextCosts).set(searchStateKey(nextState), nextState.cost),
+      costs,
+    )
+    pending = [...rest, ...nextStates]
+  }
+
+  return Option.none()
+}
 
 const pathfindRoute = (
   nodes: ReadonlyArray<GraphNode>,
   input: RoutableTransition,
   priorSegments: ReadonlyArray<Segment>,
 ): ReadonlyArray<Point> => {
-  const start = routeStart(input.from)
+  const start = routeStart(input)
   const end = routeEnd(input.to)
   const grid = routeGrid(nodes, input, priorSegments)
   const initialState = {
@@ -1080,7 +1092,7 @@ const pathfindRoute = (
 
   if (
     routeTouchesNode(
-      visualizedRoutePoints(input.from, input.to, route),
+      visualizedRoutePoints(input, route),
       intermediateRouteNodes(nodes, input),
     )
   ) {
@@ -1097,8 +1109,7 @@ const routeTransition = (
 ): RoutedEdge => {
   const backEdge = isBackEdge(input.from, input.to)
   const points = visualizedRoutePoints(
-    input.from,
-    input.to,
+    input,
     pathfindRoute(nodes, input, priorSegments),
   )
 

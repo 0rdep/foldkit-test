@@ -12,6 +12,8 @@ import { resetModel } from './update'
 
 export const fromSavedWorkspace = ({
   workflow,
+  flowHistory = [workflow],
+  targetCompanyId = '',
   actors,
   documents,
   nextSequence,
@@ -42,6 +44,11 @@ export const fromSavedWorkspace = ({
 
   return {
     workflow,
+    flowHistory: Array.isReadonlyArrayEmpty(flowHistory)
+      ? [workflow]
+      : flowHistory,
+    targetCompanyId,
+    companies: [],
     actors,
     documents,
     nextSequence,

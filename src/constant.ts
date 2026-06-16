@@ -14,6 +14,7 @@ export const DEFAULT_WORKFLOW: Workflow.WorkflowDefinition = {
   name: 'Requisition approval flow',
   documentType: 'Requisition',
   version: 1,
+  state: 'draft',
   initialStatusId: 'DRAFT',
   statuses: [
     {
@@ -25,20 +26,8 @@ export const DEFAULT_WORKFLOW: Workflow.WorkflowDefinition = {
     {
       id: 'PENDING_APPROVAL',
       name: 'Pending Approval',
-      type: 'approval',
-      editPolicy: Workflow.approvalEditPolicy,
-      approval: {
-        allowSelfApproval: true,
-        approvedTransitionId: 'pending-approval-to-approved',
-        rejectedTransitionId: 'pending-approval-to-rejected',
-        rules: [
-          {
-            id: 'approval-standard-amount',
-            minAmount: 1,
-            roleId: 'OrderModerator',
-          },
-        ],
-      },
+      type: 'normal',
+      editPolicy: Workflow.unlockedEditPolicy,
     },
     {
       id: 'APPROVED',
@@ -71,7 +60,12 @@ export const DEFAULT_WORKFLOW: Workflow.WorkflowDefinition = {
       fromStatusId: 'DRAFT',
       toStatusId: 'PENDING_APPROVAL',
       label: 'Submit for approval',
-      allowedRoles: ['OrderCreator', 'OrderModerator', 'OrderModeratorLimited', 'SystemAdmin'],
+      allowedRoles: [
+        'OrderCreator',
+        'OrderModerator',
+        'OrderModeratorLimited',
+        'SystemAdmin',
+      ],
       requiresComment: false,
       sortOrder: 'a0',
       effects: [
@@ -119,7 +113,12 @@ export const DEFAULT_WORKFLOW: Workflow.WorkflowDefinition = {
       fromStatusId: 'PENDING_APPROVAL',
       toStatusId: 'REJECTED',
       label: 'Reject',
-      allowedRoles: ['OrderCreator', 'OrderModerator', 'OrderModeratorLimited', 'SystemAdmin'],
+      allowedRoles: [
+        'OrderCreator',
+        'OrderModerator',
+        'OrderModeratorLimited',
+        'SystemAdmin',
+      ],
       requiresComment: false,
       sortOrder: 'b1',
       effects: [
@@ -155,7 +154,12 @@ export const DEFAULT_WORKFLOW: Workflow.WorkflowDefinition = {
       fromStatusId: 'REJECTED',
       toStatusId: 'PENDING_APPROVAL',
       label: 'Resubmit for approval',
-      allowedRoles: ['OrderCreator', 'OrderModerator', 'OrderModeratorLimited', 'SystemAdmin'],
+      allowedRoles: [
+        'OrderCreator',
+        'OrderModerator',
+        'OrderModeratorLimited',
+        'SystemAdmin',
+      ],
       requiresComment: false,
       sortOrder: 'd0',
       effects: [],
@@ -165,7 +169,12 @@ export const DEFAULT_WORKFLOW: Workflow.WorkflowDefinition = {
       fromStatusId: 'REJECTED',
       toStatusId: 'CANCELLED',
       label: 'Cancel',
-      allowedRoles: ['OrderCreator', 'OrderModerator', 'OrderModeratorLimited', 'SystemAdmin'],
+      allowedRoles: [
+        'OrderCreator',
+        'OrderModerator',
+        'OrderModeratorLimited',
+        'SystemAdmin',
+      ],
       requiresComment: false,
       sortOrder: 'd1',
       effects: [],
@@ -181,7 +190,6 @@ export const DEFAULT_DOCUMENTS: ReadonlyArray<Workflow.DocumentInstance> = [
     workflowVersion: DEFAULT_WORKFLOW.version,
     amount: 12000,
     currentStatusId: DEFAULT_WORKFLOW.initialStatusId,
-    approvals: [],
     effectLog: [],
     eventLog: [{ id: 'event-1', label: 'REQ-1001 created as Draft' }],
   },

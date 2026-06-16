@@ -5,15 +5,39 @@ type GraphqlResponse<TData> = {
   readonly errors?: ReadonlyArray<{ readonly message: string }>
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null
+
+const isGraphqlResponse = <TData>(
+  value: unknown,
+): value is GraphqlResponse<TData> => isRecord(value)
+
+const stringProperty = (
+  value: Record<string, unknown>,
+  key: string,
+): string | undefined => {
+  const property = Reflect.get(value, key)
+
+  return typeof property === 'string' ? property : undefined
+}
+
 const endpoint = (): string =>
   import.meta.env.VITE_PUNCT_GRAPHQL_URL ?? '/graphql'
 
 const tokenFromAuthValue = (value: string): string => {
   try {
-    const parsed = JSON.parse(value) as Record<string, unknown>
-    const token = parsed.accessToken ?? parsed.idToken ?? parsed.token
+    const parsed: unknown = JSON.parse(value)
 
-    if (typeof token === 'string') {
+    if (!isRecord(parsed)) {
+      return value
+    }
+
+    const token =
+      stringProperty(parsed, 'accessToken') ??
+      stringProperty(parsed, 'idToken') ??
+      stringProperty(parsed, 'token')
+
+    if (token !== undefined) {
       return token
     }
   } catch {
@@ -45,7 +69,10 @@ export const request = <TData, TVariables>(
     try: async () => {
       const response = await fetch(endpoint(), {
         method: 'POST',
-        headers: { 'content-type': 'application/json', ...authorizationHeader() },
+        headers: {
+          'content-type': 'application/json',
+          ...authorizationHeader(),
+        },
         body: JSON.stringify({ query, variables }),
       })
 
@@ -53,7 +80,11 @@ export const request = <TData, TVariables>(
         throw new Error(`GraphQL request failed with ${response.status}`)
       }
 
-      const payload = (await response.json()) as GraphqlResponse<TData>
+      const payload: unknown = await response.json()
+
+      if (!isGraphqlResponse<TData>(payload)) {
+        throw new Error('GraphQL response was not an object')
+      }
 
       if (payload.errors && payload.errors.length > 0) {
         throw new Error(payload.errors.map(error => error.message).join('\n'))

@@ -5,6 +5,8 @@ import { Workflow } from '../../domain'
 
 export const SavedWorkspace = S.Struct({
   workflow: Workflow.WorkflowDefinition,
+  flowHistory: S.optional(S.Array(Workflow.WorkflowDefinition)),
+  targetCompanyId: S.optional(S.String),
   actors: S.Array(Workflow.Actor),
   documents: S.Array(Workflow.DocumentInstance),
   nextSequence: S.Number,
@@ -14,6 +16,13 @@ export type SavedWorkspace = typeof SavedWorkspace.Type
 
 export const SelectedItemKind = S.Literals(['Workflow', 'Status', 'Transition'])
 export type SelectedItemKind = typeof SelectedItemKind.Type
+
+export const CompanyOption = S.Struct({
+  id: S.Number,
+  name: S.String,
+  active: S.Boolean,
+})
+export type CompanyOption = typeof CompanyOption.Type
 
 export const GraphPanIdle = ts('GraphPanIdle')
 export const GraphPanning = ts('GraphPanning', {
@@ -65,6 +74,9 @@ export type GraphContextMenuState = typeof GraphContextMenuState.Type
 
 export const Model = S.Struct({
   workflow: Workflow.WorkflowDefinition,
+  flowHistory: S.Array(Workflow.WorkflowDefinition),
+  targetCompanyId: S.String,
+  companies: S.Array(CompanyOption),
   actors: S.Array(Workflow.Actor),
   documents: S.Array(Workflow.DocumentInstance),
   nextSequence: S.Number,

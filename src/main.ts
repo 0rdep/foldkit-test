@@ -7,7 +7,7 @@ import { STORAGE_KEY } from './constant'
 import { Message } from './message'
 import { Model } from './model'
 import { Workspace } from './page'
-import { LoadFlowDefinitions } from './page/workspace/command'
+import { LoadCompanies, LoadFlowDefinitions } from './page/workspace/command'
 import { subscriptions } from './subscription'
 import { resetModel, update } from './update'
 import { view } from './view'
@@ -37,10 +37,29 @@ export const flags: Effect.Effect<Flags> = Effect.gen(function* () {
 
 // INIT
 
+const targetCompanyIdVariable = (value: string): string | undefined => {
+  const companyId = value.trim()
+
+  return companyId === '' ? undefined : companyId
+}
+
 export const init: Runtime.ProgramInit<Model, Message, Flags> = flags => {
+  const workspace = Workspace.init(flags.maybeSavedWorkspace)
+  const companyId = targetCompanyIdVariable(workspace.targetCompanyId)
+
+  if (companyId === undefined) {
+    return [{ workspace }, [LoadCompanies()]]
+  }
+
   return [
-    { workspace: Workspace.init(flags.maybeSavedWorkspace) },
-    [LoadFlowDefinitions({ documentType: 'requisition' })],
+    { workspace },
+    [
+      LoadCompanies(),
+      LoadFlowDefinitions({
+        documentType: 'requisition',
+        companyId,
+      }),
+    ],
   ]
 }
 
