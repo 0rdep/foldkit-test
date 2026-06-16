@@ -2,11 +2,15 @@ import { Schema as S } from 'effect'
 import { m } from 'foldkit/message'
 
 import { Workflow } from '../../domain'
+import { FlowDocumentType } from './model'
 
 export const ClickedSelectedWorkflow = m('ClickedSelectedWorkflow')
 export const ClickedToggledActionMenu = m('ClickedToggledActionMenu')
 export const UpdatedTargetCompanyId = m('UpdatedTargetCompanyId', {
   value: S.String,
+})
+export const UpdatedFlowDocumentType = m('UpdatedFlowDocumentType', {
+  value: FlowDocumentType,
 })
 export const ClickedSavedPreviewLocal = m('ClickedSavedPreviewLocal')
 export const ClickedUndidFlowChanges = m('ClickedUndidFlowChanges')
@@ -182,6 +186,7 @@ export const Message = S.Union([
   ClickedSelectedWorkflow,
   ClickedToggledActionMenu,
   UpdatedTargetCompanyId,
+  UpdatedFlowDocumentType,
   ClickedSavedPreviewLocal,
   ClickedUndidFlowChanges,
   SelectedStatus,

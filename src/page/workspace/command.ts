@@ -39,7 +39,7 @@ import {
   SucceededPublishFlow,
   SucceededSaveFlowDraft,
 } from './message'
-import { SavedWorkspace } from './model'
+import { FlowDocumentType, SavedWorkspace } from './model'
 
 type UpdateFlowDraftResponse = {
   readonly Flow: {
@@ -72,6 +72,7 @@ export const SaveWorkspace = Command.define(
     workflow: Workflow.WorkflowDefinition,
     flowHistory: S.Array(Workflow.WorkflowDefinition),
     targetCompanyId: S.String,
+    selectedFlowDocumentType: FlowDocumentType,
     actors: S.Array(Workflow.Actor),
     documents: S.Array(Workflow.DocumentInstance),
     nextSequence: S.Number,

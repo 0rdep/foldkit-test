@@ -14,6 +14,7 @@ export const fromSavedWorkspace = ({
   workflow,
   flowHistory = [workflow],
   targetCompanyId = '',
+  selectedFlowDocumentType = 'requisition',
   actors,
   documents,
   nextSequence,
@@ -48,6 +49,7 @@ export const fromSavedWorkspace = ({
       ? [workflow]
       : flowHistory,
     targetCompanyId,
+    selectedFlowDocumentType,
     companies: [],
     actors,
     documents,

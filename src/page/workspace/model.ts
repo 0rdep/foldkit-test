@@ -3,10 +3,14 @@ import { ts } from 'foldkit/schema'
 
 import { Workflow } from '../../domain'
 
+export const FlowDocumentType = S.Literals(['requisition', 'order'])
+export type FlowDocumentType = typeof FlowDocumentType.Type
+
 export const SavedWorkspace = S.Struct({
   workflow: Workflow.WorkflowDefinition,
   flowHistory: S.optional(S.Array(Workflow.WorkflowDefinition)),
   targetCompanyId: S.optional(S.String),
+  selectedFlowDocumentType: S.optional(FlowDocumentType),
   actors: S.Array(Workflow.Actor),
   documents: S.Array(Workflow.DocumentInstance),
   nextSequence: S.Number,
@@ -76,6 +80,7 @@ export const Model = S.Struct({
   workflow: Workflow.WorkflowDefinition,
   flowHistory: S.Array(Workflow.WorkflowDefinition),
   targetCompanyId: S.String,
+  selectedFlowDocumentType: FlowDocumentType,
   companies: S.Array(CompanyOption),
   actors: S.Array(Workflow.Actor),
   documents: S.Array(Workflow.DocumentInstance),

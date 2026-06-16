@@ -33,6 +33,7 @@ import {
   SelectedStatus,
   SelectedStatusType,
   SuppressedNativeGraphContextMenu,
+  UpdatedFlowDocumentType,
   UpdatedTargetCompanyId,
   UpdatedStatusName,
 } from './message'
@@ -804,6 +805,39 @@ const graphActions = (model: Model): Html => {
       ),
     ],
     [
+      h.label(
+        [h.Class('flex items-center gap-2 text-xs font-semibold text-slate-600')],
+        [
+          'Flow',
+          h.select(
+            [
+              h.Value(model.selectedFlowDocumentType),
+              h.OnChange(value =>
+                UpdatedFlowDocumentType({
+                  value: value === 'order' ? 'order' : 'requisition',
+                }),
+              ),
+              h.Class(clsx(inputClass, 'h-9 min-w-36 px-2 py-1')),
+            ],
+            [
+              h.option(
+                [
+                  h.Value('requisition'),
+                  h.Selected(model.selectedFlowDocumentType === 'requisition'),
+                ],
+                ['Requisition'],
+              ),
+              h.option(
+                [
+                  h.Value('order'),
+                  h.Selected(model.selectedFlowDocumentType === 'order'),
+                ],
+                ['Order'],
+              ),
+            ],
+          ),
+        ],
+      ),
       h.label(
         [h.Class('flex items-center gap-2 text-xs font-semibold text-slate-600')],
         [

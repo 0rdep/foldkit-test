@@ -56,7 +56,7 @@ export const init: Runtime.ProgramInit<Model, Message, Flags> = flags => {
     [
       LoadCompanies(),
       LoadFlowDefinitions({
-        documentType: 'requisition',
+        documentType: workspace.selectedFlowDocumentType,
         companyId,
       }),
     ],

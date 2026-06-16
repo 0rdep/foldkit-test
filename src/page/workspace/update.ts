@@ -21,6 +21,7 @@ import { type Message } from './message'
 import {
   GraphCanvasContextMenu,
   GraphContextMenuClosed,
+  type FlowDocumentType,
   GraphNodeContextMenu,
   GraphPanIdle,
   GraphPanning,
@@ -106,6 +107,11 @@ const targetCompanyIdValueVariable = (value: string): string | undefined => {
   return companyId === '' ? undefined : companyId
 }
 
+const flowDocumentTypeFromWorkflow = (
+  workflow: Workflow.WorkflowDefinition,
+): FlowDocumentType =>
+  workflow.documentType.toLowerCase() === 'order' ? 'order' : 'requisition'
+
 const historyDefinitionMatches = (
   definition: Workflow.WorkflowDefinition,
   flowId: string,
@@ -163,6 +169,7 @@ const workspaceCommand = (model: Model): Command.Command<Message> =>
     workflow: model.workflow,
     flowHistory: model.flowHistory,
     targetCompanyId: model.targetCompanyId,
+    selectedFlowDocumentType: model.selectedFlowDocumentType,
     actors: model.actors,
     documents: model.documents,
     nextSequence: model.nextSequence,
@@ -193,6 +200,7 @@ const resetModel = (): Model =>
     workflow: DEFAULT_WORKFLOW,
     flowHistory: [DEFAULT_WORKFLOW],
     targetCompanyId: '',
+    selectedFlowDocumentType: 'requisition',
     companies: [],
     actors: DEFAULT_ACTORS,
     documents: DEFAULT_DOCUMENTS,
@@ -431,8 +439,29 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           [
             workspaceCommand(nextModel),
             LoadFlowDefinitions({
-              documentType: 'requisition',
+              documentType: nextModel.selectedFlowDocumentType,
               companyId: targetCompanyIdValueVariable(value),
+            }),
+          ],
+        ]
+      },
+
+      UpdatedFlowDocumentType: ({ value }) => {
+        const nextModel = evo(model, {
+          selectedFlowDocumentType: () => value,
+          flowHistory: () => [],
+          banner: () => '',
+          isActionMenuOpen: () => false,
+          graphContextMenuState: () => GraphContextMenuClosed(),
+        })
+
+        return [
+          nextModel,
+          [
+            workspaceCommand(nextModel),
+            LoadFlowDefinitions({
+              documentType: value,
+              companyId: targetCompanyIdVariable(model),
             }),
           ],
         ]
@@ -1063,7 +1092,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         }),
         [
           LoadFlowDefinitions({
-            documentType: 'requisition',
+            documentType: model.selectedFlowDocumentType,
             companyId: targetCompanyIdVariable(model),
           }),
         ],
@@ -1133,6 +1162,8 @@ export const update = (model: Model, message: Message): UpdateReturn =>
               evo(model, {
                 workflow: () => workflow,
                 flowHistory: () => currentHistory(workflow, definitions),
+                selectedFlowDocumentType: () =>
+                  flowDocumentTypeFromWorkflow(workflow),
                 selectedStatusId: () => workflow.initialStatusId,
                 selectedTransitionId: () => workflow.transitions[0]?.id ?? '',
                 selectedItemKind: () => 'Workflow',
@@ -1189,7 +1220,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           [
             workspaceCommand(nextModel),
             LoadFlowDefinitions({
-              documentType: 'requisition',
+              documentType: nextModel.selectedFlowDocumentType,
               companyId: selectedCompanyId,
             }),
           ],
