@@ -1,12 +1,18 @@
 import { describe, expect, test } from 'vitest'
 
 import { DEFAULT_WORKFLOW } from './constant'
-import { DEFAULT_ORDER_FLOW } from './default-flow-definitions'
+import {
+  DEFAULT_ORDER_FLOW,
+  DEFAULT_REQUISITION_FLOW,
+} from './default-flow-definitions'
 import { Graph, Workflow } from './domain'
 import { defaultModel } from './main'
 import {
+  ClickedAddedStatus,
   ClickedAppliedDefaultFlow,
   ClickedDeletedStatus,
+  ClickedMovedTransitionEarlier,
+  ClickedMovedTransitionLater,
   ClickedRequestedTransition,
   ClickedResetGraphViewport,
   ClickedRevertedFlowVersion,
@@ -14,6 +20,7 @@ import {
   ClickedZoomedGraphIn,
   ClickedZoomedGraphOut,
   CompletedSaveWorkspace,
+  FailedLoadFlowDefinitions,
   MovedGraphCanvasPointer,
   PressedGraphCanvas,
   PressedTransitionOutput,
@@ -21,7 +28,9 @@ import {
   ReleasedTransitionInput,
   SelectedActor,
   SelectedStatus,
+  SucceededLoadFlowDefinitions,
   SucceededLoadFlowHistory,
+  UpdatedFlowDocumentType,
   UpdatedTransitionAutomationOnly,
 } from './page/workspace/message'
 import { update } from './page/workspace/update'
@@ -299,6 +308,78 @@ describe('workflow engine update', () => {
     expect(applied.selectedStatusId).toBe(DEFAULT_ORDER_FLOW.initialStatusId)
   })
 
+  test('changing flow document type waits for remote workflow definitions', () => {
+    const model = {
+      ...defaultModel(),
+      workflow: DEFAULT_ORDER_FLOW,
+      selectedFlowDocumentType: 'order' as const,
+      selectedStatusId: DEFAULT_ORDER_FLOW.initialStatusId,
+    }
+    const [loading, commands] = update(
+      model,
+      UpdatedFlowDocumentType({ value: 'requisition' }),
+    )
+    const [loaded, loadedCommands] = update(
+      loading,
+      SucceededLoadFlowDefinitions({ definitions: [DEFAULT_REQUISITION_FLOW] }),
+    )
+
+    expect(loading.selectedFlowDocumentType).toBe('order')
+    expect(loading.workflow.id).toBe(DEFAULT_ORDER_FLOW.id)
+    expect(loading.pendingOperations).toStrictEqual(['loadFlowDefinitions'])
+    expect(commands.length).toBe(1)
+    expect(loaded.selectedFlowDocumentType).toBe('requisition')
+    expect(loaded.workflow.id).toBe(DEFAULT_REQUISITION_FLOW.id)
+    expect(loaded.workflow.initialStatusId).toBe(
+      DEFAULT_REQUISITION_FLOW.initialStatusId,
+    )
+    expect(loaded.selectedStatusId).toBe(
+      DEFAULT_REQUISITION_FLOW.initialStatusId,
+    )
+    expect(loaded.selectedItemKind).toBe('Workflow')
+    expect(loaded.pendingOperations).toStrictEqual(['loadFlowHistory'])
+    expect(loadedCommands.length).toBe(2)
+  })
+
+  test('failed flow document type load keeps current workflow and clears loading', () => {
+    const model = {
+      ...defaultModel(),
+      workflow: DEFAULT_ORDER_FLOW,
+      selectedFlowDocumentType: 'order' as const,
+      selectedStatusId: DEFAULT_ORDER_FLOW.initialStatusId,
+    }
+    const [loading] = update(
+      model,
+      UpdatedFlowDocumentType({ value: 'requisition' }),
+    )
+    const [failed, commands] = update(
+      loading,
+      FailedLoadFlowDefinitions({ error: 'network down' }),
+    )
+
+    expect(failed.selectedFlowDocumentType).toBe('order')
+    expect(failed.workflow.id).toBe(DEFAULT_ORDER_FLOW.id)
+    expect(failed.pendingOperations).toStrictEqual([])
+    expect(failed.banner).toBe('Failed to load flows: network down')
+    expect(commands).toStrictEqual([])
+  })
+
+  test('loading blocks workspace actions until command results arrive', () => {
+    const model = {
+      ...defaultModel(),
+      pendingOperations: ['loadFlowDefinitions' as const],
+    }
+    const [blocked, blockedCommands] = update(model, ClickedAddedStatus())
+    const [loaded] = update(
+      model,
+      SucceededLoadFlowDefinitions({ definitions: [DEFAULT_REQUISITION_FLOW] }),
+    )
+
+    expect(blocked).toBe(model)
+    expect(blockedCommands).toStrictEqual([])
+    expect(loaded.workflow.id).toBe(DEFAULT_REQUISITION_FLOW.id)
+  })
+
   test('automation-only transitions can be made manual and assigned roles', () => {
     const model = defaultModel()
     const transitionId =
@@ -322,6 +403,53 @@ describe('workflow engine update', () => {
 
     expect(transition?.automationOnly).toBe(false)
     expect(transition?.allowedRoles).toContain('SystemAdmin')
+  })
+
+  test('enabling automation-only clears transition roles', () => {
+    const model = defaultModel()
+    const transitionId = 'draft-to-approved'
+    const [nextModel, commands] = update(
+      model,
+      UpdatedTransitionAutomationOnly({ transitionId, value: true }),
+    )
+    const transition = nextModel.workflow.transitions.find(
+      item => item.id === transitionId,
+    )
+
+    expect(transition?.automationOnly).toBe(true)
+    expect(transition?.allowedRoles).toStrictEqual([])
+    expect(commands.length).toBe(1)
+  })
+
+  test('moving transitions changes workflow transition order', () => {
+    const model = defaultModel()
+    const transitionId = 'pending-approval-to-approved'
+    const initialOrder = model.workflow.transitions.map(
+      transition => transition.id,
+    )
+    const [movedEarlier, earlierCommands] = update(
+      model,
+      ClickedMovedTransitionEarlier({ transitionId }),
+    )
+    const [movedLater, laterCommands] = update(
+      movedEarlier,
+      ClickedMovedTransitionLater({ transitionId }),
+    )
+
+    expect(
+      movedEarlier.workflow.transitions
+        .slice(0, 3)
+        .map(transition => transition.id),
+    ).toStrictEqual([
+      'draft-to-pending-approval',
+      'pending-approval-to-approved',
+      'draft-to-approved',
+    ])
+    expect(
+      movedLater.workflow.transitions.map(transition => transition.id),
+    ).toStrictEqual(initialOrder)
+    expect(earlierCommands.length).toBe(1)
+    expect(laterCommands.length).toBe(1)
   })
 
   test('dragging the graph viewport updates pan without saving workspace', () => {
@@ -466,6 +594,35 @@ describe('workflow engine update', () => {
     expect(upperDelta).toBeCloseTo(lowerDelta)
     expect(upperDelta).toBeGreaterThan(40)
     expect(upperDelta).toBeLessThan(160)
+  })
+
+  test('routes lower outgoing edge below upper outgoing edge', () => {
+    const workflow: Workflow.WorkflowDefinition = {
+      id: 'lower-edge-order-flow',
+      name: 'Lower edge order flow',
+      documentType: 'Test',
+      version: 1,
+      initialStatusId: 'SOURCE',
+      statuses: [
+        graphStatus('SOURCE', 'Source', 'draft'),
+        graphStatus('UPPER', 'Upper'),
+        graphStatus('LOWER', 'Lower'),
+      ],
+      transitions: [
+        graphTransition('source-to-upper', 'SOURCE', 'UPPER'),
+        graphTransition('source-to-lower', 'SOURCE', 'LOWER'),
+      ],
+    }
+    const layout = Graph.layout(workflow)
+    const source = layout.nodes.find(node => node.status.id === 'SOURCE')
+    const lowerEdge = layout.edges.find(
+      edge => edge.transition.id === 'source-to-lower',
+    )
+    const lowerEdgeMinY = Math.min(
+      ...pathSamplePoints(lowerEdge?.path ?? '').map(point => point.y),
+    )
+
+    expect(lowerEdgeMinY).toBeGreaterThanOrEqual(nodeCenterY(source) - 1)
   })
 
   test('keeps the middle of three outgoing graph nodes on the source row', () => {

@@ -20,6 +20,7 @@ const routeEdgeOverlapPenalty = 9000
 const routeEdgeNearPenalty = 800
 const routeEdgeCrossingPenalty = 140
 const routeTurnPenalty = 140
+const routeOppositeVerticalPenalty = 160
 const routeSearchMargin = 132
 
 export type GraphNode = Readonly<{
@@ -984,6 +985,20 @@ const routeGrid = (
 const routeDirection = (from: Point, to: Point): Direction =>
   from.x === to.x ? 'vertical' : 'horizontal'
 
+const routeVerticalDirectionPenalty = (
+  from: Point,
+  to: Point,
+  preferredDirection: number,
+): number => {
+  if (preferredDirection === 0 || from.y === to.y) {
+    return 0
+  }
+
+  return Math.sign(to.y - from.y) === preferredDirection
+    ? 0
+    : routeOppositeVerticalPenalty
+}
+
 const pointKey = (p: Point): string => `${p.x},${p.y}`
 
 const searchStateKey = (state: SearchState): string =>
@@ -1047,6 +1062,7 @@ const routeSearch = (
   bestCosts: ReadonlyMap<string, number>,
   end: Point,
   grid: SearchGrid,
+  preferredVerticalDirection: number,
 ): Option.Option<ReadonlyArray<Point>> => {
   const pending: Array<SearchState> = [...open]
   const visited = new Set(closed)
@@ -1093,6 +1109,11 @@ const routeSearch = (
           state.cost +
           manhattanDistance(state.point, nextPoint) +
           turnCost +
+          routeVerticalDirectionPenalty(
+            state.point,
+            nextPoint,
+            preferredVerticalDirection,
+          ) +
           edgeCost
         const nextState = {
           point: nextPoint,
@@ -1132,6 +1153,7 @@ const pathfindRoute = (
   const start = routeStart(input)
   const end = routeEnd(input.to)
   const grid = routeGrid(nodes, input, priorSegments)
+  const preferredVerticalDirection = Math.sign(end.y - start.y)
   const initialState = {
     point: start,
     direction: 'start' as const,
@@ -1146,6 +1168,7 @@ const pathfindRoute = (
       new Map([[searchStateKey(initialState), 0]]),
       end,
       grid,
+      preferredVerticalDirection,
     ),
     {
       onNone: () => fallbackAroundNodesRoute(nodes, input, start, end),

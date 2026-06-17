@@ -7,7 +7,9 @@ import { Graph } from './domain'
 import {
   GotEditableActionsDisclosureMessage,
   GotFlowHistoryDisclosureMessage,
-  GotNodeTransitionsDisclosureMessage,
+  GotIncomingTransitionsDisclosureMessage,
+  GotNodeTransitionDisclosureMessage,
+  GotOutgoingTransitionsDisclosureMessage,
   type Message,
 } from './message'
 import { LeftPanelClosed, LeftPanelOpen, type Model } from './model'
@@ -25,8 +27,17 @@ const canvasZoomStep = 0.1
 const initFlowHistoryDisclosure = (): Disclosure.Model =>
   Disclosure.init({ id: 'flow-history-disclosure' })
 
-const initNodeTransitionsDisclosure = (): Disclosure.Model =>
-  Disclosure.init({ id: 'node-transitions-disclosure' })
+const initIncomingTransitionsDisclosure = (): Disclosure.Model =>
+  Disclosure.init({ id: 'incoming-transitions-disclosure' })
+
+const initOutgoingTransitionsDisclosure = (): Disclosure.Model =>
+  Disclosure.init({ id: 'outgoing-transitions-disclosure' })
+
+const initNodeTransitionDisclosure = (
+  transitionId: string,
+  isOpen: boolean,
+): Disclosure.Model =>
+  Disclosure.init({ id: `node-transition-disclosure-${transitionId}`, isOpen })
 
 const initEditableActionsDisclosure = (): Disclosure.Model =>
   Disclosure.init({ id: 'editable-actions-disclosure' })
@@ -129,7 +140,22 @@ const updateWorkspace = (
   return [evo(model, { workspace: () => workspace }), mappedCommands]
 }
 
+const canProcessRootMessageWhileLoading = (message: Message): boolean => {
+  if (message._tag === 'GotWorkspaceMessage') {
+    return Workspace.canProcessWhileLoading(message.message)
+  }
+
+  return Workspace.canProcessWhileLoading(message as Workspace.Message.Message)
+}
+
 export const update = (model: Model, message: Message): RootUpdateReturn => {
+  if (
+    Workspace.isLoading(model.workspace) &&
+    !canProcessRootMessageWhileLoading(message)
+  ) {
+    return [model, []]
+  }
+
   if (message._tag === 'ScrolledCanvas') {
     const currentZoom = model.workspace.graphZoom
     const nextZoom = clampCanvasZoom(
@@ -179,15 +205,31 @@ export const update = (model: Model, message: Message): RootUpdateReturn => {
     return [evo(model, { leftPanelState: () => LeftPanelOpen() }), []]
   }
 
-  if (message._tag === 'ClickedToggledNodeTransitionDisclosure') {
+  if (message._tag === 'GotNodeTransitionDisclosureMessage') {
+    const isOpen = Array.contains(
+      model.openNodeTransitionIds ?? [],
+      message.transitionId,
+    )
+    const [nodeTransitionDisclosure, commands] = Disclosure.update(
+      initNodeTransitionDisclosure(message.transitionId, isOpen),
+      message.message,
+    )
+
     return [
       evo(model, {
         openNodeTransitionIds: ids =>
-          Array.contains(ids ?? [], message.transitionId)
-            ? Array.filter(ids ?? [], id => id !== message.transitionId)
-            : [...(ids ?? []), message.transitionId],
+          nodeTransitionDisclosure.isOpen
+            ? Array.contains(ids ?? [], message.transitionId)
+              ? (ids ?? [])
+              : [...(ids ?? []), message.transitionId]
+            : Array.filter(ids ?? [], id => id !== message.transitionId),
       }),
-      [],
+      Command.mapMessages(commands, childMessage =>
+        GotNodeTransitionDisclosureMessage({
+          transitionId: message.transitionId,
+          message: childMessage,
+        }),
+      ),
     ]
   }
 
@@ -205,18 +247,36 @@ export const update = (model: Model, message: Message): RootUpdateReturn => {
     ]
   }
 
-  if (message._tag === 'GotNodeTransitionsDisclosureMessage') {
-    const [nodeTransitionsDisclosure, commands] = Disclosure.update(
-      model.nodeTransitionsDisclosure ?? initNodeTransitionsDisclosure(),
+  if (message._tag === 'GotIncomingTransitionsDisclosureMessage') {
+    const [incomingTransitionsDisclosure, commands] = Disclosure.update(
+      model.incomingTransitionsDisclosure ??
+        initIncomingTransitionsDisclosure(),
       message.message,
     )
 
     return [
       evo(model, {
-        nodeTransitionsDisclosure: () => nodeTransitionsDisclosure,
+        incomingTransitionsDisclosure: () => incomingTransitionsDisclosure,
       }),
-      Command.mapMessages(commands, message =>
-        GotNodeTransitionsDisclosureMessage({ message }),
+      Command.mapMessages(commands, childMessage =>
+        GotIncomingTransitionsDisclosureMessage({ message: childMessage }),
+      ),
+    ]
+  }
+
+  if (message._tag === 'GotOutgoingTransitionsDisclosureMessage') {
+    const [outgoingTransitionsDisclosure, commands] = Disclosure.update(
+      model.outgoingTransitionsDisclosure ??
+        initOutgoingTransitionsDisclosure(),
+      message.message,
+    )
+
+    return [
+      evo(model, {
+        outgoingTransitionsDisclosure: () => outgoingTransitionsDisclosure,
+      }),
+      Command.mapMessages(commands, childMessage =>
+        GotOutgoingTransitionsDisclosureMessage({ message: childMessage }),
       ),
     ]
   }
@@ -248,7 +308,8 @@ export const resetModel = (): Model => ({
   workspace: Workspace.resetModel(),
   leftPanelState: LeftPanelOpen(),
   flowHistoryDisclosure: initFlowHistoryDisclosure(),
-  nodeTransitionsDisclosure: initNodeTransitionsDisclosure(),
+  incomingTransitionsDisclosure: initIncomingTransitionsDisclosure(),
+  outgoingTransitionsDisclosure: initOutgoingTransitionsDisclosure(),
   editableActionsDisclosure: initEditableActionsDisclosure(),
   openNodeTransitionIds: [],
 })

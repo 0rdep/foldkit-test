@@ -3,6 +3,7 @@ import { Disclosure } from '@foldkit/ui'
 import { Effect, Option, Schema as S } from 'effect'
 import { KeyValueStore } from 'effect/unstable/persistence'
 import { Runtime } from 'foldkit'
+import { evo } from 'foldkit/struct'
 
 import { STORAGE_KEY } from './constant'
 import { Message } from './message'
@@ -47,20 +48,30 @@ const targetCompanyIdVariable = (value: string): string | undefined => {
 export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => {
   const workspace = Workspace.init(flags.maybeSavedWorkspace)
   const companyId = targetCompanyIdVariable(workspace.targetCompanyId)
+  const pendingOperations =
+    companyId === undefined
+      ? ['loadCompanies' as const]
+      : ['loadCompanies' as const, 'loadFlowDefinitions' as const]
   const flowHistoryDisclosure = Disclosure.init({
     id: 'flow-history-disclosure',
   })
-  const nodeTransitionsDisclosure = Disclosure.init({
-    id: 'node-transitions-disclosure',
+  const incomingTransitionsDisclosure = Disclosure.init({
+    id: 'incoming-transitions-disclosure',
+  })
+  const outgoingTransitionsDisclosure = Disclosure.init({
+    id: 'outgoing-transitions-disclosure',
   })
   const editableActionsDisclosure = Disclosure.init({
     id: 'editable-actions-disclosure',
   })
   const model = {
-    workspace,
+    workspace: evo(workspace, {
+      pendingOperations: () => pendingOperations,
+    }),
     leftPanelState: LeftPanelOpen(),
     flowHistoryDisclosure,
-    nodeTransitionsDisclosure,
+    incomingTransitionsDisclosure,
+    outgoingTransitionsDisclosure,
     editableActionsDisclosure,
     openNodeTransitionIds: [],
   }

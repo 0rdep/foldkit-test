@@ -13,7 +13,8 @@ export const Model = S.Struct({
   workspace: Workspace.Model.Model,
   leftPanelState: S.optional(LeftPanelState),
   flowHistoryDisclosure: S.optional(Disclosure.Model),
-  nodeTransitionsDisclosure: S.optional(Disclosure.Model),
+  incomingTransitionsDisclosure: S.optional(Disclosure.Model),
+  outgoingTransitionsDisclosure: S.optional(Disclosure.Model),
   editableActionsDisclosure: S.optional(Disclosure.Model),
   openNodeTransitionIds: S.optional(S.Array(S.String)),
 })

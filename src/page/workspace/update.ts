@@ -28,6 +28,7 @@ import {
   GraphPanning,
   GraphTransitionContextMenu,
   type Model,
+  type PendingOperation,
   TransitionDragIdle,
   TransitionDragging,
 } from './model'
@@ -37,6 +38,48 @@ const withUpdateReturn = M.withReturnType<UpdateReturn>()
 const minGraphZoom = 0.45
 const maxGraphZoom = 1.8
 const graphZoomStep = 0.15
+const commandResultMessageTags: ReadonlyArray<string> = [
+  'CompletedSaveWorkspace',
+  'SucceededLoadFlowDefinitions',
+  'FailedLoadFlowDefinitions',
+  'SucceededLoadCompanies',
+  'FailedLoadCompanies',
+  'SucceededLoadFlowHistory',
+  'FailedLoadFlowHistory',
+  'SucceededSaveFlowDraft',
+  'FailedSaveFlowDraft',
+  'SucceededPublishFlow',
+  'FailedPublishFlow',
+]
+
+export const isLoading = (model: Model): boolean =>
+  !Array.isReadonlyArrayEmpty(model.pendingOperations)
+
+export const canProcessWhileLoading = (message: Message): boolean =>
+  Array.contains(commandResultMessageTags, message._tag)
+
+export const addPendingOperation = (
+  model: Model,
+  operation: PendingOperation,
+): Model =>
+  evo(model, {
+    pendingOperations: pendingOperations =>
+      Array.contains(pendingOperations, operation)
+        ? pendingOperations
+        : [...pendingOperations, operation],
+  })
+
+const removePendingOperation = (
+  model: Model,
+  operation: PendingOperation,
+): Model =>
+  evo(model, {
+    pendingOperations: pendingOperations =>
+      Array.filter(
+        pendingOperations,
+        pendingOperation => pendingOperation !== operation,
+      ),
+  })
 
 const parseNumberInput = (value: string, fallback: number): number => {
   const parsed = globalThis.Number(value)
@@ -226,6 +269,7 @@ const resetModel = (): Model =>
     lastRequestJson: '',
     lastResponseJson: '',
     banner: '',
+    pendingOperations: [],
   })
 
 const updateSelectedDocument = (
@@ -295,12 +339,27 @@ const toggleTransitionRole = (
         : [...allowedRoles, roleId],
   })
 
+const setTransitionAutomationOnly = (
+  transition: Workflow.Transition,
+  value: boolean,
+): Workflow.Transition =>
+  Workflow.Transition.make({
+    id: transition.id,
+    fromStatusId: transition.fromStatusId,
+    toStatusId: transition.toStatusId,
+    allowedRoles: value ? [] : transition.allowedRoles,
+    automationOnly: value,
+    effects: transition.effects,
+  })
+
 const moveTransition = (
   transitions: ReadonlyArray<Workflow.Transition>,
   transitionId: string,
   offset: number,
 ): ReadonlyArray<Workflow.Transition> => {
-  const index = transitions.findIndex(transition => transition.id === transitionId)
+  const index = transitions.findIndex(
+    transition => transition.id === transitionId,
+  )
   const targetIndex = index + offset
 
   if (index < 0 || targetIndex < 0 || targetIndex >= transitions.length) {
@@ -500,8 +559,12 @@ const saveAndRefresh = (
 const saveFlowChange = (nextModel: Model, previousModel: Model): UpdateReturn =>
   saveAndRefresh(nextModel, previousModel.workflow)
 
-export const update = (model: Model, message: Message): UpdateReturn =>
-  M.value(message).pipe(
+export const update = (model: Model, message: Message): UpdateReturn => {
+  if (isLoading(model) && !canProcessWhileLoading(message)) {
+    return [model, []]
+  }
+
+  return M.value(message).pipe(
     withUpdateReturn,
     M.tagsExhaustive({
       ClickedSelectedWorkflow: () => [
@@ -524,13 +587,16 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       ],
 
       UpdatedTargetCompanyId: ({ value }) => {
-        const nextModel = evo(model, {
-          targetCompanyId: () => value,
-          flowHistory: () => [],
-          banner: () => '',
-          isActionMenuOpen: () => false,
-          graphContextMenuState: () => GraphContextMenuClosed(),
-        })
+        const nextModel = addPendingOperation(
+          evo(model, {
+            targetCompanyId: () => value,
+            flowHistory: () => [],
+            banner: () => '',
+            isActionMenuOpen: () => false,
+            graphContextMenuState: () => GraphContextMenuClosed(),
+          }),
+          'loadFlowDefinitions',
+        )
 
         return [
           nextModel,
@@ -545,18 +611,18 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       },
 
       UpdatedFlowDocumentType: ({ value }) => {
-        const nextModel = evo(model, {
-          selectedFlowDocumentType: () => value,
-          flowHistory: () => [],
-          banner: () => '',
-          isActionMenuOpen: () => false,
-          graphContextMenuState: () => GraphContextMenuClosed(),
-        })
+        const nextModel = addPendingOperation(
+          evo(model, {
+            banner: () => '',
+            isActionMenuOpen: () => false,
+            graphContextMenuState: () => GraphContextMenuClosed(),
+          }),
+          'loadFlowDefinitions',
+        )
 
         return [
           nextModel,
           [
-            workspaceCommand(nextModel),
             LoadFlowDefinitions({
               documentType: value,
               companyId: targetCompanyIdVariable(model),
@@ -796,10 +862,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           evo(model, {
             workflow: workflow =>
               Workflow.updateTransition(workflow, transitionId, transition =>
-                evo(transition, {
-                  automationOnly: () => value,
-                  allowedRoles: allowedRoles => (value ? [] : allowedRoles),
-                }),
+                setTransitionAutomationOnly(transition, value),
               ),
             banner: () => 'Transition automation setting updated',
           }),
@@ -1293,11 +1356,14 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         ),
 
       ClickedLoadedRemoteFlowDefinitions: () => [
-        evo(model, {
-          banner: () => '',
-          isActionMenuOpen: () => false,
-          graphContextMenuState: () => GraphContextMenuClosed(),
-        }),
+        addPendingOperation(
+          evo(model, {
+            banner: () => '',
+            isActionMenuOpen: () => false,
+            graphContextMenuState: () => GraphContextMenuClosed(),
+          }),
+          'loadFlowDefinitions',
+        ),
         [
           LoadFlowDefinitions({
             documentType: model.selectedFlowDocumentType,
@@ -1326,11 +1392,14 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         ),
 
       ClickedSavedRemoteFlowDraft: () => [
-        evo(model, {
-          banner: () => '',
-          isActionMenuOpen: () => false,
-          graphContextMenuState: () => GraphContextMenuClosed(),
-        }),
+        addPendingOperation(
+          evo(model, {
+            banner: () => '',
+            isActionMenuOpen: () => false,
+            graphContextMenuState: () => GraphContextMenuClosed(),
+          }),
+          'saveFlowDraft',
+        ),
         [
           SaveFlowDraft({
             flowId: model.workflow.id,
@@ -1341,11 +1410,14 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       ],
 
       ClickedPublishedRemoteFlow: () => [
-        evo(model, {
-          banner: () => '',
-          isActionMenuOpen: () => false,
-          graphContextMenuState: () => GraphContextMenuClosed(),
-        }),
+        addPendingOperation(
+          evo(model, {
+            banner: () => '',
+            isActionMenuOpen: () => false,
+            graphContextMenuState: () => GraphContextMenuClosed(),
+          }),
+          'publishFlow',
+        ),
         [
           PublishFlow({
             flowId: model.workflow.id,
@@ -1359,30 +1431,36 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 
       SucceededLoadFlowDefinitions: ({ definitions }) => {
         const maybeDefinition = Array.head(definitions)
+        const baseModel = removePendingOperation(model, 'loadFlowDefinitions')
 
         return Option.match(maybeDefinition, {
           onNone: () => [
-            evo(model, { banner: () => 'No remote flow definitions returned' }),
+            evo(baseModel, {
+              banner: () => 'No remote flow definitions returned',
+            }),
             [],
           ],
           onSome: workflow => {
-            const nextModel = refreshExchange(
-              evo(model, {
-                workflow: () => workflow,
-                flowHistory: () => currentHistory(workflow, definitions),
-                selectedFlowDocumentType: () =>
-                  flowDocumentTypeFromWorkflow(workflow),
-                selectedStatusId: () => workflow.initialStatusId,
-                selectedTransitionId: () => workflow.transitions[0]?.id ?? '',
-                selectedItemKind: () => 'Workflow',
-                selectedItemId: () => '',
-                isActionMenuOpen: () => false,
-                graphContextMenuState: () => GraphContextMenuClosed(),
-                isPreviewSaved: () => false,
-                isDirty: () => false,
-                undoStack: () => [],
-                banner: () => '',
-              }),
+            const nextModel = addPendingOperation(
+              refreshExchange(
+                evo(baseModel, {
+                  workflow: () => workflow,
+                  flowHistory: () => currentHistory(workflow, definitions),
+                  selectedFlowDocumentType: () =>
+                    flowDocumentTypeFromWorkflow(workflow),
+                  selectedStatusId: () => workflow.initialStatusId,
+                  selectedTransitionId: () => workflow.transitions[0]?.id ?? '',
+                  selectedItemKind: () => 'Workflow',
+                  selectedItemId: () => '',
+                  isActionMenuOpen: () => false,
+                  graphContextMenuState: () => GraphContextMenuClosed(),
+                  isPreviewSaved: () => false,
+                  isDirty: () => false,
+                  undoStack: () => [],
+                  banner: () => '',
+                }),
+              ),
+              'loadFlowHistory',
             )
 
             return [
@@ -1400,38 +1478,46 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       },
 
       FailedLoadFlowDefinitions: ({ error }) => [
-        evo(model, { banner: () => `Failed to load flows: ${error}` }),
+        evo(removePendingOperation(model, 'loadFlowDefinitions'), {
+          banner: () => `Failed to load flows: ${error}`,
+        }),
         [],
       ],
 
       SucceededLoadCompanies: ({ companies }) => {
+        const baseModel = removePendingOperation(model, 'loadCompanies')
         const selectedCompanyExists = Array.some(
           companies,
-          company => `${company.id}` === model.targetCompanyId,
+          company => `${company.id}` === baseModel.targetCompanyId,
         )
         const selectedCompanyId = selectedCompanyExists
-          ? model.targetCompanyId
+          ? baseModel.targetCompanyId
           : `${companies[0]?.id ?? ''}`
-        const nextModel = evo(model, {
+        const nextModel = evo(baseModel, {
           companies: () => companies,
           targetCompanyId: () => selectedCompanyId,
           flowHistory: flowHistory =>
-            selectedCompanyId === model.targetCompanyId ? flowHistory : [],
+            selectedCompanyId === baseModel.targetCompanyId ? flowHistory : [],
         })
 
         if (
           selectedCompanyId === '' ||
-          selectedCompanyId === model.targetCompanyId
+          selectedCompanyId === baseModel.targetCompanyId
         ) {
           return [nextModel, []]
         }
 
-        return [
+        const loadingModel = addPendingOperation(
           nextModel,
+          'loadFlowDefinitions',
+        )
+
+        return [
+          loadingModel,
           [
-            workspaceCommand(nextModel),
+            workspaceCommand(loadingModel),
             LoadFlowDefinitions({
-              documentType: nextModel.selectedFlowDocumentType,
+              documentType: loadingModel.selectedFlowDocumentType,
               companyId: selectedCompanyId,
             }),
           ],
@@ -1439,33 +1525,40 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       },
 
       FailedLoadCompanies: ({ error }) => [
-        evo(model, { banner: () => `Failed to load companies: ${error}` }),
+        evo(removePendingOperation(model, 'loadCompanies'), {
+          banner: () => `Failed to load companies: ${error}`,
+        }),
         [],
       ],
 
       SucceededLoadFlowHistory: ({ definitions }) => [
-        evo(model, {
+        evo(removePendingOperation(model, 'loadFlowHistory'), {
           flowHistory: () => currentHistory(model.workflow, definitions),
         }),
         [],
       ],
 
       FailedLoadFlowHistory: ({ error }) => [
-        evo(model, { banner: () => `Failed to load flow history: ${error}` }),
+        evo(removePendingOperation(model, 'loadFlowHistory'), {
+          banner: () => `Failed to load flow history: ${error}`,
+        }),
         [],
       ],
 
       SucceededSaveFlowDraft: ({ workflow }) => {
-        const nextModel = refreshExchange(
-          evo(model, {
-            workflow: () => workflow,
-            flowHistory: flowHistory =>
-              upsertFlowHistory(flowHistory, workflow),
-            isPreviewSaved: () => true,
-            isDirty: () => false,
-            undoStack: () => [],
-            banner: () => '',
-          }),
+        const nextModel = addPendingOperation(
+          refreshExchange(
+            evo(removePendingOperation(model, 'saveFlowDraft'), {
+              workflow: () => workflow,
+              flowHistory: flowHistory =>
+                upsertFlowHistory(flowHistory, workflow),
+              isPreviewSaved: () => true,
+              isDirty: () => false,
+              undoStack: () => [],
+              banner: () => '',
+            }),
+          ),
+          'loadFlowHistory',
         )
 
         return [
@@ -1481,21 +1574,26 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       },
 
       FailedSaveFlowDraft: ({ error }) => [
-        evo(model, { banner: () => `Failed to save flow draft: ${error}` }),
+        evo(removePendingOperation(model, 'saveFlowDraft'), {
+          banner: () => `Failed to save flow draft: ${error}`,
+        }),
         [],
       ],
 
       SucceededPublishFlow: ({ workflow }) => {
-        const nextModel = refreshExchange(
-          evo(model, {
-            workflow: () => workflow,
-            flowHistory: flowHistory =>
-              upsertFlowHistory(flowHistory, workflow),
-            isPreviewSaved: () => false,
-            isDirty: () => false,
-            undoStack: () => [],
-            banner: () => '',
-          }),
+        const nextModel = addPendingOperation(
+          refreshExchange(
+            evo(removePendingOperation(model, 'publishFlow'), {
+              workflow: () => workflow,
+              flowHistory: flowHistory =>
+                upsertFlowHistory(flowHistory, workflow),
+              isPreviewSaved: () => false,
+              isDirty: () => false,
+              undoStack: () => [],
+              banner: () => '',
+            }),
+          ),
+          'loadFlowHistory',
         )
 
         return [
@@ -1511,10 +1609,13 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       },
 
       FailedPublishFlow: ({ error }) => [
-        evo(model, { banner: () => `Failed to publish flow: ${error}` }),
+        evo(removePendingOperation(model, 'publishFlow'), {
+          banner: () => `Failed to publish flow: ${error}`,
+        }),
         [],
       ],
     }),
   )
+}
 
 export { resetModel }

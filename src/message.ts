@@ -57,17 +57,21 @@ export const ReleasedGraphClientPointer = m('ReleasedGraphClientPointer', {
 })
 export const ClickedHidLeftPanel = m('ClickedHidLeftPanel')
 export const ClickedOpenedLeftPanel = m('ClickedOpenedLeftPanel')
-export const ClickedToggledNodeTransitionDisclosure = m(
-  'ClickedToggledNodeTransitionDisclosure',
-  { transitionId: S.String },
-)
 export const GotFlowHistoryDisclosureMessage = m(
   'GotFlowHistoryDisclosureMessage',
   { message: Disclosure.Message },
 )
-export const GotNodeTransitionsDisclosureMessage = m(
-  'GotNodeTransitionsDisclosureMessage',
+export const GotIncomingTransitionsDisclosureMessage = m(
+  'GotIncomingTransitionsDisclosureMessage',
   { message: Disclosure.Message },
+)
+export const GotOutgoingTransitionsDisclosureMessage = m(
+  'GotOutgoingTransitionsDisclosureMessage',
+  { message: Disclosure.Message },
+)
+export const GotNodeTransitionDisclosureMessage = m(
+  'GotNodeTransitionDisclosureMessage',
+  { transitionId: S.String, message: Disclosure.Message },
 )
 export const GotEditableActionsDisclosureMessage = m(
   'GotEditableActionsDisclosureMessage',
@@ -82,9 +86,10 @@ export const Message = S.Union([
   ReleasedGraphClientPointer,
   ClickedHidLeftPanel,
   ClickedOpenedLeftPanel,
-  ClickedToggledNodeTransitionDisclosure,
   GotFlowHistoryDisclosureMessage,
-  GotNodeTransitionsDisclosureMessage,
+  GotIncomingTransitionsDisclosureMessage,
+  GotOutgoingTransitionsDisclosureMessage,
+  GotNodeTransitionDisclosureMessage,
   GotEditableActionsDisclosureMessage,
 ])
 export type Message = typeof Message.Type

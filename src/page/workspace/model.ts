@@ -76,6 +76,15 @@ export const GraphContextMenuState = S.Union([
 ])
 export type GraphContextMenuState = typeof GraphContextMenuState.Type
 
+export const PendingOperation = S.Literals([
+  'loadCompanies',
+  'loadFlowDefinitions',
+  'loadFlowHistory',
+  'saveFlowDraft',
+  'publishFlow',
+])
+export type PendingOperation = typeof PendingOperation.Type
+
 export const Model = S.Struct({
   workflow: Workflow.WorkflowDefinition,
   flowHistory: S.Array(Workflow.WorkflowDefinition),
@@ -105,6 +114,7 @@ export const Model = S.Struct({
   lastRequestJson: S.String,
   lastResponseJson: S.String,
   banner: S.String,
+  pendingOperations: S.Array(PendingOperation),
 })
 
 export type Model = typeof Model.Type

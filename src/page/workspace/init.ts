@@ -74,6 +74,7 @@ export const fromSavedWorkspace = ({
     lastRequestJson: MockBackend.formatRequest(exchange),
     lastResponseJson: MockBackend.formatResponse(exchange),
     banner: '',
+    pendingOperations: [],
   }
 }
 

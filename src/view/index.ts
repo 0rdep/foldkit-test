@@ -17,13 +17,14 @@ import {
   ClickedPublishedRemoteFlow,
   ClickedSavedRemoteFlowDraft,
   ClickedSelectedWorkflow,
-  ClickedToggledNodeTransitionDisclosure,
   ClickedToggledStatusActionDisclosure,
   ClickedToggledStatusActionRole,
   ClickedToggledTransitionRole,
   GotEditableActionsDisclosureMessage,
   GotFlowHistoryDisclosureMessage,
-  GotNodeTransitionsDisclosureMessage,
+  GotIncomingTransitionsDisclosureMessage,
+  GotNodeTransitionDisclosureMessage,
+  GotOutgoingTransitionsDisclosureMessage,
   MovedGraphCanvasPointer,
   MovedGraphClientPointer,
   PressedGraphCanvas,
@@ -114,6 +115,33 @@ const currentCanvasSize = (): CanvasSize => ({
   height:
     globalThis.innerHeight > 0 ? globalThis.innerHeight : fallbackCanvasHeight,
 })
+
+const isLoading = (model: Model): boolean =>
+  !Array.isReadonlyArrayEmpty(model.workspace.pendingOperations)
+
+const pendingOperationLabel = (
+  operation: Model['workspace']['pendingOperations'][number],
+): string => {
+  if (operation === 'loadCompanies') {
+    return 'Loading companies'
+  }
+  if (operation === 'loadFlowDefinitions') {
+    return 'Loading workflow'
+  }
+  if (operation === 'loadFlowHistory') {
+    return 'Loading flow history'
+  }
+  if (operation === 'saveFlowDraft') {
+    return 'Saving draft'
+  }
+  return 'Publishing flow'
+}
+
+const loadingMessage = (model: Model): string =>
+  Option.match(Array.head(model.workspace.pendingOperations), {
+    onNone: () => 'Working',
+    onSome: pendingOperationLabel,
+  })
 
 const ObserveCanvasWheel = Mount.defineStream(
   'ObserveCanvasWheel',
@@ -1331,24 +1359,6 @@ const nodePanelTypeField = (status: Workflow.Status): Html => {
   )
 }
 
-const nodePanelStat = (label: string, value: string): Html => {
-  const h = html<Message>()
-
-  return h.div(
-    [h.Class('rounded-lg border border-slate-800 bg-slate-950/70 p-3')],
-    [
-      h.div(
-        [h.Class('text-xs font-medium uppercase tracking-wide text-slate-500')],
-        [label],
-      ),
-      h.div(
-        [h.Class('mt-1 truncate text-sm font-semibold text-slate-100')],
-        [value],
-      ),
-    ],
-  )
-}
-
 const roleToggleButton = (
   label: string,
   isSelected: boolean,
@@ -1518,13 +1528,21 @@ const transitionOrderControls = (
     'cursor-pointer rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-900 disabled:cursor-not-allowed disabled:text-slate-600 disabled:hover:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-sky-400'
 
   return h.div(
-    [h.Class('flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950/70 p-3')],
+    [
+      h.Class(
+        'flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950/70 p-3',
+      ),
+    ],
     [
       h.div(
         [h.Class('min-w-0')],
         [
           h.div(
-            [h.Class('text-xs font-medium uppercase tracking-wide text-slate-500')],
+            [
+              h.Class(
+                'text-xs font-medium uppercase tracking-wide text-slate-500',
+              ),
+            ],
             ['Order'],
           ),
           h.div(
@@ -1539,7 +1557,9 @@ const transitionOrderControls = (
           h.button(
             [
               h.Type('button'),
-              h.OnClick(ClickedMovedTransitionEarlier({ transitionId: transition.id })),
+              h.OnClick(
+                ClickedMovedTransitionEarlier({ transitionId: transition.id }),
+              ),
               ...(isFirst ? [h.Disabled(true)] : []),
               h.Class(buttonClass),
             ],
@@ -1548,7 +1568,9 @@ const transitionOrderControls = (
           h.button(
             [
               h.Type('button'),
-              h.OnClick(ClickedMovedTransitionLater({ transitionId: transition.id })),
+              h.OnClick(
+                ClickedMovedTransitionLater({ transitionId: transition.id }),
+              ),
               ...(isLast ? [h.Disabled(true)] : []),
               h.Class(buttonClass),
             ],
@@ -1640,123 +1662,142 @@ const transitionAutomationToggle = (transition: Workflow.Transition): Html => {
 
 const transitionEditor = (
   model: Model,
-  status: Workflow.Status,
   transition: Workflow.Transition,
 ): Html => {
   const h = html<Message>()
-  const isOutgoing = transition.fromStatusId === status.id
-  const peerStatusId = isOutgoing
-    ? transition.toStatusId
-    : transition.fromStatusId
-  const peerLabel = statusName(model.workspace.workflow, peerStatusId)
+  const title = statusName(model.workspace.workflow, transition.toStatusId)
   const isOpen = Array.contains(
     model.openNodeTransitionIds ?? [],
     transition.id,
   )
+  const disclosure = Disclosure.init({
+    id: `node-transition-disclosure-${transition.id}`,
+    isOpen,
+  })
 
-  return h.article(
-    [
-      h.Class(
-        'space-y-4 rounded-xl border border-slate-800 bg-slate-900/70 p-3',
-      ),
-    ],
-    [
-      h.button(
-        [
-          h.Type('button'),
-          h.OnClick(
-            ClickedToggledNodeTransitionDisclosure({
-              transitionId: transition.id,
-            }),
-          ),
-          h.Attribute('aria-expanded', isOpen ? 'true' : 'false'),
-          h.Class(
-            'flex w-full cursor-pointer select-none items-start justify-between gap-3 rounded-lg px-1 py-1 text-left hover:bg-slate-900 focus:outline-none focus:ring-0',
-          ),
-        ],
-        [
-          h.div(
-            [h.Class('min-w-0')],
-            [
-              h.h3(
-                [h.Class('truncate text-sm font-semibold text-slate-100')],
-                [
-                  `${isOutgoing ? 'Outgoing to' : 'Incoming from'} ${peerLabel}`,
-                ],
-              ),
-              h.p(
-                [h.Class('mt-1 truncate text-xs text-slate-500')],
-                [transition.id],
-              ),
-            ],
-          ),
-          h.span(
-            [h.Class('flex shrink-0 items-center gap-2')],
-            [
-              h.span(
-                [
-                  h.Class(
-                    'rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-400',
-                  ),
-                ],
-                [
-                  transition.automationOnly === true
-                    ? 'Automation'
-                    : `${transition.allowedRoles.length} roles`,
-                ],
-              ),
-              chevronIcon(isOpen),
-            ],
-          ),
-        ],
-      ),
-      h.div(
-        [h.Class(isOpen ? 'space-y-2' : 'hidden')],
-        [
-          transitionOrderControls(model, transition),
-          transitionAutomationToggle(transition),
-          h.div(
-            [
-              h.Class(
-                'text-xs font-medium uppercase tracking-wide text-slate-500',
-              ),
-            ],
-            ['Allowed roles'],
-          ),
-          transitionRoleEditor(transition),
-          h.div(
-            [h.Class('text-xs text-slate-500')],
-            [`Effects: ${transition.effects.length}`],
-          ),
-        ],
-      ),
-    ],
-  )
+  return h.submodel({
+    slotId: `node-transition-disclosure-${transition.id}`,
+    model: disclosure,
+    view: Disclosure.view,
+    viewInputs: {
+      toView: attributes =>
+        h.article(
+          [
+            h.Class(
+              'space-y-4 rounded-xl border border-slate-800 bg-slate-900/70 p-3',
+            ),
+          ],
+          [
+            h.button(
+              [
+                ...attributes.button,
+                h.Class(
+                  'flex w-full cursor-pointer select-none items-start justify-between gap-3 rounded-lg px-1 py-1 text-left hover:bg-slate-900 focus:outline-none focus:ring-0',
+                ),
+              ],
+              [
+                h.div(
+                  [h.Class('min-w-0')],
+                  [
+                    h.h3(
+                      [
+                        h.Class(
+                          'truncate text-sm font-semibold text-slate-100',
+                        ),
+                      ],
+                      [title],
+                    ),
+                    h.p(
+                      [h.Class('mt-1 truncate text-xs text-slate-500')],
+                      [transition.id],
+                    ),
+                  ],
+                ),
+                h.span(
+                  [h.Class('flex shrink-0 items-center gap-2')],
+                  [
+                    h.span(
+                      [
+                        h.Class(
+                          'rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-400',
+                        ),
+                      ],
+                      [
+                        transition.automationOnly === true
+                          ? 'Automation'
+                          : `${transition.allowedRoles.length} roles`,
+                      ],
+                    ),
+                    chevronIcon(disclosure.isOpen),
+                  ],
+                ),
+              ],
+            ),
+            disclosure.isOpen
+              ? h.div(
+                  [...attributes.panel, h.Class('space-y-2')],
+                  [
+                    transitionOrderControls(model, transition),
+                    transitionAutomationToggle(transition),
+                    h.div(
+                      [
+                        h.Class(
+                          'text-xs font-medium uppercase tracking-wide text-slate-500',
+                        ),
+                      ],
+                      ['Allowed roles'],
+                    ),
+                    transitionRoleEditor(transition),
+                    h.div(
+                      [h.Class('text-xs text-slate-500')],
+                      [`Effects: ${transition.effects.length}`],
+                    ),
+                  ],
+                )
+              : h.empty,
+          ],
+        ),
+    },
+    toParentMessage: message =>
+      GotNodeTransitionDisclosureMessage({
+        transitionId: transition.id,
+        message,
+      }),
+  })
 }
 
-const nodeTransitions = (
+const incomingNodeTransitions = (
   model: Model,
   status: Workflow.Status,
 ): ReadonlyArray<Workflow.Transition> =>
   Array.filter(
     model.workspace.workflow.transitions,
-    transition =>
-      transition.fromStatusId === status.id ||
-      transition.toStatusId === status.id,
+    transition => transition.toStatusId === status.id,
   )
 
-const nodeTransitionsDisclosure = (
+const outgoingNodeTransitions = (
   model: Model,
   status: Workflow.Status,
+): ReadonlyArray<Workflow.Transition> =>
+  Array.filter(
+    model.workspace.workflow.transitions,
+    transition => transition.fromStatusId === status.id,
+  )
+
+const transitionsDisclosureSection = (
+  model: Model,
+  status: Workflow.Status,
+  label: string,
+  emptyMessage: string,
+  transitions: ReadonlyArray<Workflow.Transition>,
+  disclosure: Disclosure.Model,
+  slotId: string,
+  toParentMessage: (message: Disclosure.Message) => Message,
 ): Html => {
   const h = html<Message>()
-  const disclosure =
-    model.nodeTransitionsDisclosure ??
-    Disclosure.init({ id: 'node-transitions-disclosure' })
-  const transitions = nodeTransitions(model, status)
 
   return h.submodel({
-    slotId: 'node-transitions-disclosure',
+    slotId,
     model: disclosure,
     view: Disclosure.view,
     viewInputs: {
@@ -1767,7 +1808,7 @@ const nodeTransitionsDisclosure = (
             h.button(
               [...attributes.button, h.Class(disclosureButtonClass)],
               [
-                h.span([], ['Transitions']),
+                h.span([], [label]),
                 h.span(
                   [h.Class('flex items-center gap-2')],
                   [
@@ -1796,13 +1837,13 @@ const nodeTransitionsDisclosure = (
                               'rounded-xl border border-dashed border-slate-800 p-4 text-sm text-slate-500',
                             ),
                           ],
-                          ['This node has no transitions.'],
+                          [emptyMessage],
                         ),
                       onNonEmpty: items =>
                         h.div(
                           [h.Class('space-y-3')],
                           Array.map(items, transition =>
-                            transitionEditor(model, status, transition),
+                            transitionEditor(model, transition),
                           ),
                         ),
                     }),
@@ -1812,9 +1853,49 @@ const nodeTransitionsDisclosure = (
           ],
         ),
     },
-    toParentMessage: message =>
-      GotNodeTransitionsDisclosureMessage({ message }),
+    toParentMessage,
   })
+}
+
+const nodeTransitionsDisclosures = (
+  model: Model,
+  status: Workflow.Status,
+): Html => {
+  const h = html<Message>()
+  const incomingTransitions = incomingNodeTransitions(model, status)
+  const outgoingTransitions = outgoingNodeTransitions(model, status)
+  const incomingDisclosure =
+    model.incomingTransitionsDisclosure ??
+    Disclosure.init({ id: 'incoming-transitions-disclosure' })
+  const outgoingDisclosure =
+    model.outgoingTransitionsDisclosure ??
+    Disclosure.init({ id: 'outgoing-transitions-disclosure' })
+
+  return h.div(
+    [h.Class('space-y-3')],
+    [
+      transitionsDisclosureSection(
+        model,
+        status,
+        'Incoming transitions',
+        'This node has no incoming transitions.',
+        incomingTransitions,
+        incomingDisclosure,
+        'incoming-transitions-disclosure',
+        message => GotIncomingTransitionsDisclosureMessage({ message }),
+      ),
+      transitionsDisclosureSection(
+        model,
+        status,
+        'Outgoing transitions',
+        'This node has no outgoing transitions.',
+        outgoingTransitions,
+        outgoingDisclosure,
+        'outgoing-transitions-disclosure',
+        message => GotOutgoingTransitionsDisclosureMessage({ message }),
+      ),
+    ],
+  )
 }
 
 const nodePanel = (model: Model): Html => {
@@ -1825,14 +1906,6 @@ const nodePanel = (model: Model): Html => {
     onSome: status => {
       const isInitialStatus =
         status.id === model.workspace.workflow.initialStatusId
-      const incomingTransitions = Array.filter(
-        model.workspace.workflow.transitions,
-        transition => transition.toStatusId === status.id,
-      )
-      const outgoingTransitions = Array.filter(
-        model.workspace.workflow.transitions,
-        transition => transition.fromStatusId === status.id,
-      )
 
       return h.div(
         [
@@ -1911,21 +1984,8 @@ const nodePanel = (model: Model): Html => {
                       nodePanelTypeField(status),
                     ],
                   ),
-                  h.div(
-                    [h.Class('grid grid-cols-2 gap-2')],
-                    [
-                      nodePanelStat(
-                        'Incoming',
-                        `${incomingTransitions.length}`,
-                      ),
-                      nodePanelStat(
-                        'Outgoing',
-                        `${outgoingTransitions.length}`,
-                      ),
-                    ],
-                  ),
                   editableActionsSection(model, status),
-                  nodeTransitionsDisclosure(model, status),
+                  nodeTransitionsDisclosures(model, status),
                 ],
               ),
             ],
@@ -2052,6 +2112,56 @@ const graphContextMenu = (model: Model): Html => {
   )
 }
 
+const loadingOverlay = (model: Model): Html => {
+  const h = html<Message>()
+
+  if (!isLoading(model)) {
+    return h.empty
+  }
+
+  return h.div(
+    [
+      h.Attribute('role', 'status'),
+      h.Attribute('aria-live', 'polite'),
+      h.Class(
+        'fixed inset-0 z-50 flex cursor-wait items-center justify-center bg-slate-950/65 text-slate-100 backdrop-blur-sm',
+      ),
+    ],
+    [
+      h.div(
+        [
+          h.Class(
+            'flex min-w-64 flex-col items-center gap-4 rounded-2xl border border-slate-700 bg-slate-950/95 p-6 shadow-2xl shadow-black/50',
+          ),
+        ],
+        [
+          h.div(
+            [
+              h.Class(
+                'h-10 w-10 animate-spin rounded-full border-2 border-slate-700 border-t-sky-400',
+              ),
+            ],
+            [],
+          ),
+          h.div(
+            [h.Class('text-center')],
+            [
+              h.div(
+                [h.Class('text-sm font-semibold text-slate-100')],
+                [loadingMessage(model)],
+              ),
+              h.div(
+                [h.Class('mt-1 text-xs text-slate-500')],
+                ['Actions are disabled until this finishes.'],
+              ),
+            ],
+          ),
+        ],
+      ),
+    ],
+  )
+}
+
 const canvas = (model: Model): Html => {
   const h = html<Message>()
   const isPanning = model.workspace.graphPanState._tag === 'GraphPanning'
@@ -2060,6 +2170,7 @@ const canvas = (model: Model): Html => {
   return h.main(
     [
       h.Attribute('aria-label', 'Infinite canvas'),
+      h.Attribute('aria-busy', isLoading(model) ? 'true' : 'false'),
       h.OnPointerLeave(() =>
         isPanning ? Option.some(ReleasedGraphCanvasPointer()) : Option.none(),
       ),
@@ -2103,6 +2214,7 @@ const canvas = (model: Model): Html => {
       leftPanel(model),
       nodePanel(model),
       graphContextMenu(model),
+      loadingOverlay(model),
     ],
   )
 }
