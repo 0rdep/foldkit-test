@@ -1,6 +1,7 @@
+import { Button, Input, Select } from '@foldkit/ui'
 import clsx from 'clsx'
 import { Array, Option } from 'effect'
-import { Html, html } from 'foldkit/html'
+import { type Attribute, Html, html } from 'foldkit/html'
 
 import { Graph, Workflow } from '../../domain'
 import {
@@ -13,8 +14,8 @@ import {
   ClickedPublishedRemoteFlow,
   ClickedResetGraphViewport,
   ClickedRevertedFlowVersion,
-  ClickedSavedRemoteFlowDraft,
   ClickedSavedPreviewLocal,
+  ClickedSavedRemoteFlowDraft,
   ClickedToggledStatusActionDisclosure,
   ClickedToggledStatusActionRole,
   ClickedToggledTransitionRole,
@@ -34,8 +35,8 @@ import {
   SelectedStatusType,
   SuppressedNativeGraphContextMenu,
   UpdatedFlowDocumentType,
-  UpdatedTargetCompanyId,
   UpdatedStatusName,
+  UpdatedTargetCompanyId,
 } from './message'
 import type { Model } from './model'
 
@@ -67,6 +68,123 @@ const selectedTransitionStroke = '#FABD00'
 const incomingTransitionStroke = '#2563eb'
 const outgoingTransitionStroke = '#16a34a'
 
+const uiButton = (
+  config: Readonly<{
+    className: string
+    children: ReadonlyArray<Html | string>
+    onClick?: Message
+    isDisabled?: boolean
+    attributes?: ReadonlyArray<Attribute<Message>>
+  }>,
+): Html => {
+  const h = html<Message>()
+
+  return Button.view<Message>({
+    ...(config.onClick !== undefined ? { onClick: config.onClick } : {}),
+    ...(config.isDisabled !== undefined
+      ? { isDisabled: config.isDisabled }
+      : {}),
+    toView: ({ button }) =>
+      h.button(
+        [
+          ...button,
+          ...(config.isDisabled === true ? [h.Disabled(true)] : []),
+          ...(config.attributes ?? []),
+          h.Class(config.className),
+        ],
+        config.children,
+      ),
+  })
+}
+
+const uiInput = (
+  config: Readonly<{
+    id: string
+    label: string
+    value: string
+    onInput: (value: string) => Message
+    className: string
+    containerClassName?: string
+    labelClassName?: string
+    attributes?: ReadonlyArray<Attribute<Message>>
+  }>,
+): Html => {
+  const h = html<Message>()
+
+  return Input.view<Message>({
+    id: config.id,
+    value: config.value,
+    onInput: config.onInput,
+    toView: ({ input, label, description }) =>
+      h.div(
+        [h.Class(config.containerClassName ?? 'space-y-2')],
+        [
+          h.label(
+            [
+              ...label,
+              h.Class(
+                config.labelClassName ?? 'text-sm font-medium text-slate-700',
+              ),
+            ],
+            [config.label],
+          ),
+          h.input([
+            ...input,
+            ...(config.attributes ?? []),
+            h.Class(config.className),
+          ]),
+          h.span([...description, h.Class('sr-only')], []),
+        ],
+      ),
+  })
+}
+
+const uiSelect = (
+  config: Readonly<{
+    id: string
+    label: string
+    value: string
+    onChange: (value: string) => Message
+    className: string
+    children: ReadonlyArray<Html>
+    containerClassName?: string
+    labelClassName?: string
+    attributes?: ReadonlyArray<Attribute<Message>>
+  }>,
+): Html => {
+  const h = html<Message>()
+
+  return Select.view<Message>({
+    id: config.id,
+    value: config.value,
+    onChange: config.onChange,
+    toView: ({ select, label, description }) =>
+      h.div(
+        [h.Class(config.containerClassName ?? 'space-y-2')],
+        [
+          h.label(
+            [
+              ...label,
+              h.Class(
+                config.labelClassName ?? 'text-sm font-medium text-slate-700',
+              ),
+            ],
+            [config.label],
+          ),
+          h.select(
+            [
+              ...select,
+              ...(config.attributes ?? []),
+              h.Class(config.className),
+            ],
+            config.children,
+          ),
+          h.span([...description, h.Class('sr-only')], []),
+        ],
+      ),
+  })
+}
+
 const statusTypeFromString = (value: string): Workflow.StatusType => {
   if (value === 'draft') {
     return 'draft'
@@ -82,8 +200,8 @@ const statusBadge = (status: Workflow.Status): Html => {
 
   return h.span(
     [
-        h.Class(
-          clsx('inline-flex rounded-full px-2.5 py-1 text-xs font-semibold', {
+      h.Class(
+        clsx('inline-flex rounded-full px-2.5 py-1 text-xs font-semibold', {
           'bg-blue-100 text-blue-800': status.type === 'draft',
           'bg-emerald-100 text-emerald-800': status.type === 'final',
           'bg-slate-100 text-slate-700': status.type === 'normal',
@@ -508,13 +626,7 @@ const transitionOutputHandle = (node: Graph.GraphNode, model: Model): Html => {
       h.Type('button'),
       h.Attribute('aria-label', `Create transition from ${node.status.name}`),
       h.OnPointerDown((_pointerType, button, screenX, screenY) =>
-        transitionOutputPointerDown(
-          node,
-          false,
-          button,
-          screenX,
-          screenY,
-        ),
+        transitionOutputPointerDown(node, false, button, screenX, screenY),
       ),
       h.Style({ right: '-12px', top: '50%', transform: 'translateY(-50%)' }),
       h.Class(
@@ -805,80 +917,70 @@ const graphActions = (model: Model): Html => {
       ),
     ],
     [
-      h.label(
-        [h.Class('flex items-center gap-2 text-xs font-semibold text-slate-600')],
-        [
-          'Flow',
-          h.select(
+      uiSelect({
+        id: 'flow-document-type',
+        label: 'Flow',
+        value: model.selectedFlowDocumentType,
+        onChange: value =>
+          UpdatedFlowDocumentType({
+            value: value === 'order' ? 'order' : 'requisition',
+          }),
+        className: clsx(inputClass, 'h-9 min-w-36 px-2 py-1'),
+        containerClassName:
+          'flex items-center gap-2 text-xs font-semibold text-slate-600',
+        labelClassName: 'text-xs font-semibold text-slate-600',
+        children: [
+          h.option(
             [
-              h.Value(model.selectedFlowDocumentType),
-              h.OnChange(value =>
-                UpdatedFlowDocumentType({
-                  value: value === 'order' ? 'order' : 'requisition',
-                }),
-              ),
-              h.Class(clsx(inputClass, 'h-9 min-w-36 px-2 py-1')),
+              h.Value('requisition'),
+              h.Selected(model.selectedFlowDocumentType === 'requisition'),
             ],
+            ['Requisition'],
+          ),
+          h.option(
             [
-              h.option(
-                [
-                  h.Value('requisition'),
-                  h.Selected(model.selectedFlowDocumentType === 'requisition'),
-                ],
-                ['Requisition'],
-              ),
-              h.option(
-                [
-                  h.Value('order'),
-                  h.Selected(model.selectedFlowDocumentType === 'order'),
-                ],
-                ['Order'],
-              ),
+              h.Value('order'),
+              h.Selected(model.selectedFlowDocumentType === 'order'),
             ],
+            ['Order'],
           ),
         ],
-      ),
-      h.label(
-        [h.Class('flex items-center gap-2 text-xs font-semibold text-slate-600')],
-        [
-          'Company',
-          h.select(
-            [
-              h.Value(selectedCompanyValue),
-              h.OnChange(value => UpdatedTargetCompanyId({ value })),
-              h.Class(clsx(inputClass, 'h-9 min-w-44 px-2 py-1')),
-            ],
-            Array.isReadonlyArrayEmpty(model.companies)
-              ? [
-                  h.option(
-                    [h.Value(''), h.Disabled(true)],
-                    ['Loading companies...'],
-                  ),
-                ]
-              : Array.map(model.companies, company =>
-                h.option(
-                  [
-                    h.Value(`${company.id}`),
-                    h.Selected(`${company.id}` === selectedCompanyValue),
-                  ],
-                  [
-                    company.active
-                      ? `${company.name} (id: ${company.id})`
-                      : `${company.name} (id: ${company.id}, inactive)`,
-                  ],
-                ),
+      }),
+      uiSelect({
+        id: 'target-company',
+        label: 'Company',
+        value: selectedCompanyValue,
+        onChange: value => UpdatedTargetCompanyId({ value }),
+        className: clsx(inputClass, 'h-9 min-w-44 px-2 py-1'),
+        containerClassName:
+          'flex items-center gap-2 text-xs font-semibold text-slate-600',
+        labelClassName: 'text-xs font-semibold text-slate-600',
+        children: Array.isReadonlyArrayEmpty(model.companies)
+          ? [
+              h.option(
+                [h.Value(''), h.Disabled(true)],
+                ['Loading companies...'],
               ),
-          ),
-        ],
-      ),
-      h.button(
-        [
-          h.Type('button'),
-          h.OnClick(ClickedLoadedRemoteFlowDefinitions()),
-          h.Class(buttonClass),
-        ],
-        ['Load remote'],
-      ),
+            ]
+          : Array.map(model.companies, company =>
+              h.option(
+                [
+                  h.Value(`${company.id}`),
+                  h.Selected(`${company.id}` === selectedCompanyValue),
+                ],
+                [
+                  company.active
+                    ? `${company.name} (id: ${company.id})`
+                    : `${company.name} (id: ${company.id}, inactive)`,
+                ],
+              ),
+            ),
+      }),
+      uiButton({
+        onClick: ClickedLoadedRemoteFlowDefinitions(),
+        className: buttonClass,
+        children: ['Load remote'],
+      }),
       h.span(
         [
           h.Class(
@@ -893,50 +995,34 @@ const graphActions = (model: Model): Html => {
             ['Flow changed'],
           )
         : h.empty,
-      h.button(
-        [
-          h.Type('button'),
-          h.Disabled(Array.isReadonlyArrayEmpty(model.undoStack)),
-          h.OnClick(ClickedUndidFlowChanges()),
-          h.Class(
-            clsx(buttonClass, {
-              'cursor-not-allowed opacity-50': Array.isReadonlyArrayEmpty(
-                model.undoStack,
-              ),
-            }),
+      uiButton({
+        onClick: ClickedUndidFlowChanges(),
+        isDisabled: Array.isReadonlyArrayEmpty(model.undoStack),
+        className: clsx(buttonClass, {
+          'cursor-not-allowed opacity-50': Array.isReadonlyArrayEmpty(
+            model.undoStack,
           ),
-        ],
-        ['Undo'],
-      ),
-      h.button(
-        [
-          h.Type('button'),
-          h.OnClick(ClickedSavedPreviewLocal()),
-          h.Class(buttonClass),
-        ],
-        ['Save preview'],
-      ),
-      h.button(
-        [
-          h.Type('button'),
-          h.OnClick(ClickedSavedRemoteFlowDraft()),
-          h.Class(buttonClass),
-        ],
-        ['Save draft'],
-      ),
-      h.button(
-        [
-          h.Type('button'),
-          h.Disabled(!model.isPreviewSaved),
-          h.OnClick(ClickedPublishedRemoteFlow()),
-          h.Class(
-            clsx(buttonClass, {
-              'cursor-not-allowed opacity-50': !model.isPreviewSaved,
-            }),
-          ),
-        ],
-        ['Publish'],
-      ),
+        }),
+        children: ['Undo'],
+      }),
+      uiButton({
+        onClick: ClickedSavedPreviewLocal(),
+        className: buttonClass,
+        children: ['Save preview'],
+      }),
+      uiButton({
+        onClick: ClickedSavedRemoteFlowDraft(),
+        className: buttonClass,
+        children: ['Save draft'],
+      }),
+      uiButton({
+        onClick: ClickedPublishedRemoteFlow(),
+        isDisabled: !model.isPreviewSaved,
+        className: clsx(buttonClass, {
+          'cursor-not-allowed opacity-50': !model.isPreviewSaved,
+        }),
+        children: ['Publish'],
+      }),
     ],
   )
 }
@@ -991,14 +1077,11 @@ const flowHistoryPanel = (model: Model): Html => {
       h.div(
         [h.Class('border-t border-slate-200 p-2')],
         [
-          h.button(
-            [
-              h.Type('button'),
-              h.OnClick(ClickedAppliedDefaultFlow()),
-              h.Class(clsx(buttonClass, 'w-full')),
-            ],
-            ['Apply default flow'],
-          ),
+          uiButton({
+            onClick: ClickedAppliedDefaultFlow(),
+            className: clsx(buttonClass, 'w-full'),
+            children: ['Apply default flow'],
+          }),
         ],
       ),
       h.div(
@@ -1043,25 +1126,18 @@ const flowHistoryPanel = (model: Model): Html => {
                   ),
                 ],
               ),
-              h.button(
-                [
-                  h.Type('button'),
-                  h.Disabled(isCurrent),
-                  h.OnClick(
-                    ClickedRevertedFlowVersion({
-                      flowId: definition.id,
-                      version: definition.version,
-                    }),
-                  ),
-                  h.Class(
-                    clsx(
-                      'rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50',
-                      { 'cursor-not-allowed opacity-50': isCurrent },
-                    ),
-                  ),
-                ],
-                [isCurrent ? 'Current' : 'Revert'],
-              ),
+              uiButton({
+                onClick: ClickedRevertedFlowVersion({
+                  flowId: definition.id,
+                  version: definition.version,
+                }),
+                isDisabled: isCurrent,
+                className: clsx(
+                  'rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50',
+                  { 'cursor-not-allowed opacity-50': isCurrent },
+                ),
+                children: [isCurrent ? 'Current' : 'Revert'],
+              }),
             ],
           )
         }),
@@ -1111,14 +1187,11 @@ const graphContextMenu = (model: Model): Html => {
             h.Class(clsx(menuClass, 'pointer-events-auto')),
           ],
           [
-            h.button(
-              [
-                h.Type('button'),
-                h.OnClick(ClickedAddedStatus()),
-                h.Class(contextMenuButtonClass),
-              ],
-              ['Add node'],
-            ),
+            uiButton({
+              onClick: ClickedAddedStatus(),
+              className: contextMenuButtonClass,
+              children: ['Add node'],
+            }),
           ],
         ),
       ],
@@ -1165,21 +1238,14 @@ const graphContextMenu = (model: Model): Html => {
             h.Class(clsx(menuClass, 'pointer-events-auto')),
           ],
           [
-            h.button(
-              [
-                h.Type('button'),
-                h.Disabled(isInitialStatus),
-                h.OnClick(
-                  ClickedDeletedStatus({ statusId: menuState.statusId }),
-                ),
-                h.Class(
-                  clsx(contextMenuButtonClass, 'text-red-700', {
-                    'text-slate-400': isInitialStatus,
-                  }),
-                ),
-              ],
-              ['Delete'],
-            ),
+            uiButton({
+              onClick: ClickedDeletedStatus({ statusId: menuState.statusId }),
+              isDisabled: isInitialStatus,
+              className: clsx(contextMenuButtonClass, 'text-red-700', {
+                'text-slate-400': isInitialStatus,
+              }),
+              children: ['Delete'],
+            }),
           ],
         ),
       ],
@@ -1224,18 +1290,13 @@ const graphContextMenu = (model: Model): Html => {
             h.Class(clsx(menuClass, 'pointer-events-auto')),
           ],
           [
-            h.button(
-              [
-                h.Type('button'),
-                h.OnClick(
-                  ClickedDeletedTransition({
-                    transitionId: menuState.transitionId,
-                  }),
-                ),
-                h.Class(clsx(contextMenuButtonClass, 'text-red-700')),
-              ],
-              ['Delete'],
-            ),
+            uiButton({
+              onClick: ClickedDeletedTransition({
+                transitionId: menuState.transitionId,
+              }),
+              className: clsx(contextMenuButtonClass, 'text-red-700'),
+              children: ['Delete'],
+            }),
           ],
         ),
       ],
@@ -1258,14 +1319,11 @@ const embeddedControls = (model: Model): Html => {
           ),
         ],
         [
-          h.button(
-            [
-              h.Type('button'),
-              h.OnClick(ClickedZoomedGraphOut()),
-              h.Class(iconButtonClass),
-            ],
-            ['-'],
-          ),
+          uiButton({
+            onClick: ClickedZoomedGraphOut(),
+            className: iconButtonClass,
+            children: ['-'],
+          }),
           h.span(
             [
               h.Class(
@@ -1274,22 +1332,16 @@ const embeddedControls = (model: Model): Html => {
             ],
             [`${Math.round(model.graphZoom * 100)}%`],
           ),
-          h.button(
-            [
-              h.Type('button'),
-              h.OnClick(ClickedZoomedGraphIn()),
-              h.Class(iconButtonClass),
-            ],
-            ['+'],
-          ),
-          h.button(
-            [
-              h.Type('button'),
-              h.OnClick(ClickedResetGraphViewport()),
-              h.Class(buttonClass),
-            ],
-            ['Reset view'],
-          ),
+          uiButton({
+            onClick: ClickedZoomedGraphIn(),
+            className: iconButtonClass,
+            children: ['+'],
+          }),
+          uiButton({
+            onClick: ClickedResetGraphViewport(),
+            className: buttonClass,
+            children: ['Reset view'],
+          }),
         ],
       ),
     ],
@@ -1344,15 +1396,12 @@ const transitionRoleEditor = (transition: Workflow.Transition): Html => {
         Array.map(transitionRoleIds, roleId => {
           const isAllowed = Array.contains(transition.allowedRoles, roleId)
 
-          return h.button(
-            [
-              h.Type('button'),
-              h.OnClick(
-                ClickedToggledTransitionRole({
-                  transitionId: transition.id,
-                  roleId,
-                }),
-              ),
+          return uiButton({
+            onClick: ClickedToggledTransitionRole({
+              transitionId: transition.id,
+              roleId,
+            }),
+            attributes: [
               h.AriaPressed(isAllowed ? 'true' : 'false'),
               h.Style(
                 isAllowed
@@ -1367,14 +1416,12 @@ const transitionRoleEditor = (transition: Workflow.Transition): Html => {
                       color: '#475569',
                     },
               ),
-              h.Class(
-                clsx(buttonClass, {
-                  'shadow-sm ring-2 ring-green-200': isAllowed,
-                }),
-              ),
             ],
-            [Workflow.roleLabel(roleId)],
-          )
+            className: clsx(buttonClass, {
+              'shadow-sm ring-2 ring-green-200': isAllowed,
+            }),
+            children: [Workflow.roleLabel(roleId)],
+          })
         }),
       ),
     ],
@@ -1403,19 +1450,16 @@ const editableActionRoleEditor = (
             roleId,
           )
 
-          return h.button(
-            [
-              h.Type('button'),
+          return uiButton({
+            onClick: ClickedToggledStatusActionRole({
+              statusId: status.id,
+              action,
+              roleId,
+            }),
+            attributes: [
               h.Attribute(
                 'aria-label',
                 `${Workflow.editableActionLabel(action)}: ${Workflow.roleLabel(roleId)}`,
-              ),
-              h.OnClick(
-                ClickedToggledStatusActionRole({
-                  statusId: status.id,
-                  action,
-                  roleId,
-                }),
               ),
               h.AriaPressed(isAllowed ? 'true' : 'false'),
               h.Style(
@@ -1431,14 +1475,12 @@ const editableActionRoleEditor = (
                       color: '#475569',
                     },
               ),
-              h.Class(
-                clsx(buttonClass, {
-                  'shadow-sm ring-2 ring-green-200': isAllowed,
-                }),
-              ),
             ],
-            [Workflow.roleLabel(roleId)],
-          )
+            className: clsx(buttonClass, {
+              'shadow-sm ring-2 ring-green-200': isAllowed,
+            }),
+            children: [Workflow.roleLabel(roleId)],
+          })
         }),
       ),
     ],
@@ -1571,17 +1613,15 @@ const transitionDisclosureRow = (
           ),
         ],
       ),
-      h.button(
-        [
-          h.Type('button'),
+      uiButton({
+        onClick: ClickedDeletedTransition({ transitionId: transition.id }),
+        attributes: [
           h.Attribute('aria-label', `Delete transition to ${targetName}`),
-          h.OnClick(ClickedDeletedTransition({ transitionId: transition.id })),
-          h.Class(
-            'mt-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-700 transition hover:bg-red-100',
-          ),
         ],
-        [trashIcon()],
-      ),
+        className:
+          'mt-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-700 transition hover:bg-red-100',
+        children: [trashIcon()],
+      }),
     ],
   )
 }
@@ -1638,62 +1678,36 @@ const statusInspector = (model: Model, statusId: string): Html => {
           h.div(
             [h.Class('grid gap-4')],
             [
-              h.div(
-                [h.Class('space-y-2')],
-                [
-                  h.label(
+              uiInput({
+                id: 'status-name',
+                label: 'Status display name',
+                value: status.name,
+                onInput: value =>
+                  UpdatedStatusName({ statusId: status.id, value }),
+                className: inputClass,
+                attributes: [h.Key(`status-name-${status.id}`)],
+              }),
+              uiSelect({
+                id: 'status-type',
+                label: 'Behavior',
+                value: status.type,
+                onChange: value =>
+                  SelectedStatusType({
+                    statusId: status.id,
+                    value: statusTypeFromString(value),
+                  }),
+                className: inputClass,
+                attributes: [h.Key(`status-type-${status.id}`)],
+                children: Array.map(statusTypes, statusType =>
+                  h.option(
                     [
-                      h.For('status-name'),
-                      h.Class('text-sm font-medium text-slate-700'),
+                      h.Value(statusType),
+                      h.Selected(statusType === status.type),
                     ],
-                    ['Status display name'],
+                    [Workflow.statusTypeLabel(statusType)],
                   ),
-                  h.input([
-                    h.Key(`status-name-${status.id}`),
-                    h.Id('status-name'),
-                    h.Value(status.name),
-                    h.OnInput(value =>
-                      UpdatedStatusName({ statusId: status.id, value }),
-                    ),
-                    h.Class(inputClass),
-                  ]),
-                ],
-              ),
-              h.div(
-                [h.Class('space-y-2')],
-                [
-                  h.label(
-                    [
-                      h.For('status-type'),
-                      h.Class('text-sm font-medium text-slate-700'),
-                    ],
-                    ['Behavior'],
-                  ),
-                  h.select(
-                    [
-                      h.Key(`status-type-${status.id}`),
-                      h.Id('status-type'),
-                      h.Value(status.type),
-                      h.OnChange(value =>
-                        SelectedStatusType({
-                          statusId: status.id,
-                          value: statusTypeFromString(value),
-                        }),
-                      ),
-                      h.Class(inputClass),
-                    ],
-                    Array.map(statusTypes, statusType =>
-                      h.option(
-                        [
-                          h.Value(statusType),
-                          h.Selected(statusType === status.type),
-                        ],
-                        [Workflow.statusTypeLabel(statusType)],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              }),
             ],
           ),
           statusEditableActionsSection(model, status),

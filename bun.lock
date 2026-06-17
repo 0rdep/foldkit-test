@@ -6,11 +6,12 @@
       "name": "web",
       "dependencies": {
         "@effect/platform-browser": "4.0.0-beta.78",
+        "@foldkit/ui": "0.112.0",
         "@launchdarkly/js-client-sdk": "^4.9.0",
         "@tailwindcss/vite": "^4.2.4",
         "clsx": "^2.1.1",
         "effect": "4.0.0-beta.78",
-        "foldkit": "^0.106.0",
+        "foldkit": "0.112.0",
         "fractional-indexing": "^3.2.0",
         "tailwindcss": "^4.2.4",
       },
@@ -115,6 +116,8 @@
     "@floating-ui/utils": ["@floating-ui/utils@0.2.11", "", {}, "sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg=="],
 
     "@foldkit/devtools-mcp": ["@foldkit/devtools-mcp@0.10.0", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.29.0", "ws": "^8.20.0" }, "peerDependencies": { "effect": "4.0.0-beta.78", "foldkit": "^0" }, "bin": { "foldkit-devtools-mcp": "dist/server.js" } }, "sha512-v/4HiWmQSQjFO5hvTJiw9rDa1BFpdfOX7QzKaYrwKmrJC15R4ypuBrvmKAzl0HoVB+Vcku+1o+hqj09AWjkk/Q=="],
+
+    "@foldkit/ui": ["@foldkit/ui@0.112.0", "", { "dependencies": { "@floating-ui/dom": "^1.7.6" }, "peerDependencies": { "@effect/platform-browser": "4.0.0-beta.78", "effect": "4.0.0-beta.78", "foldkit": "^0" } }, "sha512-YjIzJ5VEOANExEwCH+j7g0QbSjG/QHZgYMWvcAUar4xMO15fYiuH4qI1GPF2zr81KEk1YUCvtivVRhLgUin+9A=="],
 
     "@foldkit/vite-plugin": ["@foldkit/vite-plugin@0.8.0", "", { "dependencies": { "ws": "^8.20.0" }, "peerDependencies": { "effect": "4.0.0-beta.78", "foldkit": "^0", "vite": "^8.0.0" } }, "sha512-jB07n0O/73MdHdhSdhxg1ZXlpoB7uoldqsfXmCO2RUFrvucuUVXAq4fvyH91bItxrsQ303yQXCN3tKFoO9B1wA=="],
 
@@ -628,7 +631,7 @@
 
     "flatted": ["flatted@3.4.2", "", {}, "sha512-PjDse7RzhcPkIJwy5t7KPWQSZ9cAbzQXcafsetQoD7sOJRQlGikNbx7yZp2OotDnJyrDcbyRq3Ttb18iYOqkxA=="],
 
-    "foldkit": ["foldkit@0.106.0", "", { "dependencies": { "@floating-ui/dom": "^1.7.6", "clsx": "^2.1.1", "snabbdom": "^3.6.3" }, "peerDependencies": { "@effect/platform-browser": "4.0.0-beta.78", "effect": "4.0.0-beta.78" } }, "sha512-2LBezPAr4S45fSX+U4AXqTlpdNdAIeznDkY2Zwfm0U7XgiHLLadJU7U7GwCWOm6QfSV5BAWedbR2aDSJv23BZQ=="],
+    "foldkit": ["foldkit@0.112.0", "", { "dependencies": { "clsx": "^2.1.1", "snabbdom": "^3.6.3" }, "peerDependencies": { "@effect/platform-browser": "4.0.0-beta.78", "effect": "4.0.0-beta.78" } }, "sha512-HZ/P96/yQQMMbVaudS9FqST+0fYI/U4k+4oe5RTXFpt9AlDn38UoyfXmuotG4XYtcx+AZGVcoPwFAmDA8e21Vg=="],
 
     "formdata-polyfill": ["formdata-polyfill@4.0.10", "", { "dependencies": { "fetch-blob": "^3.1.2" } }, "sha512-buewHzMvYL29jdeQTVILecSaZKnt/RJWjoZCF5OW60Z67/GmSLBkOFM7qh1PI3zFNtJbaZL5eQu1vLfazOwj4g=="],
 

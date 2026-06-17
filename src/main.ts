@@ -43,7 +43,7 @@ const targetCompanyIdVariable = (value: string): string | undefined => {
   return companyId === '' ? undefined : companyId
 }
 
-export const init: Runtime.ProgramInit<Model, Message, Flags> = flags => {
+export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => {
   const workspace = Workspace.init(flags.maybeSavedWorkspace)
   const companyId = targetCompanyIdVariable(workspace.targetCompanyId)
 
