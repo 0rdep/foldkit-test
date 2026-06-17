@@ -4,6 +4,12 @@ import { m } from 'foldkit/message'
 import { Workflow } from '../../domain'
 import { FlowDocumentType } from './model'
 
+const DeliveryAutomationStatusField = S.Literals([
+  'fullyDeliveredStatusId',
+  'partiallyDeliveredStatusId',
+  'partiallyDeliveredCompletionRequiredStatusId',
+])
+
 export const ClickedSelectedWorkflow = m('ClickedSelectedWorkflow')
 export const ClickedToggledActionMenu = m('ClickedToggledActionMenu')
 export const UpdatedTargetCompanyId = m('UpdatedTargetCompanyId', {
@@ -88,6 +94,23 @@ export const ClickedRemovedTransitionEffect = m(
   {
     transitionId: S.String,
     effectId: S.String,
+  },
+)
+export const ClickedAddedDeliveryAutomation = m(
+  'ClickedAddedDeliveryAutomation',
+)
+export const ClickedRemovedDeliveryAutomation = m(
+  'ClickedRemovedDeliveryAutomation',
+)
+export const UpdatedDeliveryAutomationEnabled = m(
+  'UpdatedDeliveryAutomationEnabled',
+  { value: S.Boolean },
+)
+export const SelectedDeliveryAutomationStatus = m(
+  'SelectedDeliveryAutomationStatus',
+  {
+    field: DeliveryAutomationStatusField,
+    statusId: S.String,
   },
 )
 export const SelectedActor = m('SelectedActor', { actorId: S.String })
@@ -218,6 +241,10 @@ export const Message = S.Union([
   ClickedDeletedTransition,
   ClickedAddedTransitionEffect,
   ClickedRemovedTransitionEffect,
+  ClickedAddedDeliveryAutomation,
+  ClickedRemovedDeliveryAutomation,
+  UpdatedDeliveryAutomationEnabled,
+  SelectedDeliveryAutomationStatus,
   SelectedActor,
   SelectedDocument,
   UpdatedDocumentAmount,

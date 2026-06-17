@@ -5,6 +5,8 @@ import { evo } from 'foldkit/struct'
 
 import { Graph } from './domain'
 import {
+  GotAutomationsDisclosureMessage,
+  GotDeliveryAutomationDisclosureMessage,
   GotEditableActionsDisclosureMessage,
   GotFlowHistoryDisclosureMessage,
   GotIncomingTransitionsDisclosureMessage,
@@ -26,6 +28,12 @@ const canvasZoomStep = 0.1
 
 const initFlowHistoryDisclosure = (): Disclosure.Model =>
   Disclosure.init({ id: 'flow-history-disclosure' })
+
+const initAutomationsDisclosure = (): Disclosure.Model =>
+  Disclosure.init({ id: 'automations-disclosure' })
+
+const initDeliveryAutomationDisclosure = (): Disclosure.Model =>
+  Disclosure.init({ id: 'delivery-automation-disclosure' })
 
 const initIncomingTransitionsDisclosure = (): Disclosure.Model =>
   Disclosure.init({ id: 'incoming-transitions-disclosure' })
@@ -145,7 +153,24 @@ const canProcessRootMessageWhileLoading = (message: Message): boolean => {
     return Workspace.canProcessWhileLoading(message.message)
   }
 
-  return Workspace.canProcessWhileLoading(message as Workspace.Message.Message)
+  if (
+    message._tag === 'ScrolledCanvas' ||
+    message._tag === 'MovedGraphClientPointer' ||
+    message._tag === 'ReleasedGraphClientPointer' ||
+    message._tag === 'ClickedHidLeftPanel' ||
+    message._tag === 'ClickedOpenedLeftPanel' ||
+    message._tag === 'GotFlowHistoryDisclosureMessage' ||
+    message._tag === 'GotAutomationsDisclosureMessage' ||
+    message._tag === 'GotDeliveryAutomationDisclosureMessage' ||
+    message._tag === 'GotIncomingTransitionsDisclosureMessage' ||
+    message._tag === 'GotOutgoingTransitionsDisclosureMessage' ||
+    message._tag === 'GotNodeTransitionDisclosureMessage' ||
+    message._tag === 'GotEditableActionsDisclosureMessage'
+  ) {
+    return false
+  }
+
+  return Workspace.canProcessWhileLoading(message)
 }
 
 export const update = (model: Model, message: Message): RootUpdateReturn => {
@@ -247,6 +272,36 @@ export const update = (model: Model, message: Message): RootUpdateReturn => {
     ]
   }
 
+  if (message._tag === 'GotAutomationsDisclosureMessage') {
+    const [automationsDisclosure, commands] = Disclosure.update(
+      model.automationsDisclosure ?? initAutomationsDisclosure(),
+      message.message,
+    )
+
+    return [
+      evo(model, { automationsDisclosure: () => automationsDisclosure }),
+      Command.mapMessages(commands, message =>
+        GotAutomationsDisclosureMessage({ message }),
+      ),
+    ]
+  }
+
+  if (message._tag === 'GotDeliveryAutomationDisclosureMessage') {
+    const [deliveryAutomationDisclosure, commands] = Disclosure.update(
+      model.deliveryAutomationDisclosure ?? initDeliveryAutomationDisclosure(),
+      message.message,
+    )
+
+    return [
+      evo(model, {
+        deliveryAutomationDisclosure: () => deliveryAutomationDisclosure,
+      }),
+      Command.mapMessages(commands, message =>
+        GotDeliveryAutomationDisclosureMessage({ message }),
+      ),
+    ]
+  }
+
   if (message._tag === 'GotIncomingTransitionsDisclosureMessage') {
     const [incomingTransitionsDisclosure, commands] = Disclosure.update(
       model.incomingTransitionsDisclosure ??
@@ -301,12 +356,14 @@ export const update = (model: Model, message: Message): RootUpdateReturn => {
     return updateWorkspace(model, message.message)
   }
 
-  return updateWorkspace(model, message as Workspace.Message.Message)
+  return updateWorkspace(model, message)
 }
 
 export const resetModel = (): Model => ({
   workspace: Workspace.resetModel(),
   leftPanelState: LeftPanelOpen(),
+  automationsDisclosure: initAutomationsDisclosure(),
+  deliveryAutomationDisclosure: initDeliveryAutomationDisclosure(),
   flowHistoryDisclosure: initFlowHistoryDisclosure(),
   incomingTransitionsDisclosure: initIncomingTransitionsDisclosure(),
   outgoingTransitionsDisclosure: initOutgoingTransitionsDisclosure(),

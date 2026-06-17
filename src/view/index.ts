@@ -5,6 +5,7 @@ import { type Document, type Html, html } from 'foldkit/html'
 
 import { Graph, Workflow } from '../domain'
 import {
+  ClickedAddedDeliveryAutomation,
   ClickedAddedStatus,
   ClickedAppliedDefaultFlow,
   ClickedClosedGraphContextMenu,
@@ -15,17 +16,19 @@ import {
   ClickedMovedTransitionLater,
   ClickedOpenedLeftPanel,
   ClickedPublishedRemoteFlow,
+  ClickedRemovedDeliveryAutomation,
   ClickedSavedRemoteFlowDraft,
   ClickedSelectedWorkflow,
   ClickedToggledStatusActionDisclosure,
   ClickedToggledStatusActionRole,
   ClickedToggledTransitionRole,
+  GotAutomationsDisclosureMessage,
+  GotDeliveryAutomationDisclosureMessage,
   GotEditableActionsDisclosureMessage,
   GotFlowHistoryDisclosureMessage,
   GotIncomingTransitionsDisclosureMessage,
   GotNodeTransitionDisclosureMessage,
   GotOutgoingTransitionsDisclosureMessage,
-  MovedGraphCanvasPointer,
   MovedGraphClientPointer,
   PressedGraphCanvas,
   PressedGraphCanvasContextMenu,
@@ -34,11 +37,12 @@ import {
   PressedTransitionOutput,
   ReleasedGraphCanvasPointer,
   ReleasedGraphClientPointer,
-  ReleasedTransitionInput,
   ScrolledCanvas,
+  SelectedDeliveryAutomationStatus,
   SelectedStatus,
   SelectedStatusType,
   SuppressedNativeGraphContextMenu,
+  UpdatedDeliveryAutomationEnabled,
   UpdatedFlowDocumentType,
   UpdatedStatusId,
   UpdatedStatusName,
@@ -92,6 +96,11 @@ type CanvasSize = Readonly<{
   width: number
   height: number
 }>
+
+type DeliveryAutomationStatusField =
+  | 'fullyDeliveredStatusId'
+  | 'partiallyDeliveredStatusId'
+  | 'partiallyDeliveredCompletionRequiredStatusId'
 
 const graphLayoutCache = new WeakMap<
   Model['workspace']['workflow'],
@@ -250,11 +259,6 @@ const nodeAtPoint = (
       point.y <= node.y + node.height,
   )
 
-const inputPinPoint = (node: Graph.GraphNode): Point => ({
-  x: node.x,
-  y: node.y + node.height / 2,
-})
-
 const outputPinPoint = (node: Graph.GraphNode): Point => ({
   x: node.x + node.width,
   y: node.y + node.height / 2,
@@ -324,33 +328,6 @@ const outputPinAtPoint = (
   graphZoom: number,
 ): Option.Option<Graph.GraphNode> =>
   pinAtPoint(layout.nodes, point, graphZoom, canUseOutputPin, outputPinPoint)
-
-const inputTargetAtPoint = (
-  model: Model,
-  layout: Graph.GraphLayout,
-  point: Point,
-  graphZoom: number,
-): Option.Option<Graph.GraphNode> =>
-  Option.match(
-    pinAtPoint(
-      layout.nodes,
-      point,
-      graphZoom,
-      node => canDropTransitionOnNode(model, node),
-      inputPinPoint,
-    ),
-    {
-      onSome: node => Option.some(node),
-      onNone: () =>
-        Option.match(nodeAtPoint(layout, point), {
-          onNone: () => Option.none(),
-          onSome: node =>
-            canDropTransitionOnNode(model, node)
-              ? Option.some(node)
-              : Option.none(),
-        }),
-    },
-  )
 
 const edgePathNumbers = (path: string): ReadonlyArray<number> =>
   Array.map(path.match(numberPattern) ?? [], Number)
@@ -1078,6 +1055,291 @@ const remoteFlowActions = (model: Model): Html => {
   )
 }
 
+const deliveryAutomationStatusSelect = (
+  model: Model,
+  label: string,
+  field: DeliveryAutomationStatusField,
+  value: string,
+): Html => {
+  const h = html<Message>()
+  const hasSelectedStatus = Option.isSome(
+    Workflow.findStatus(model.workspace.workflow, value),
+  )
+
+  return h.label(
+    [h.Class('block')],
+    [
+      h.div(
+        [h.Class('text-xs font-medium uppercase tracking-wide text-slate-500')],
+        [label],
+      ),
+      h.select(
+        [
+          h.Value(value),
+          h.OnChange(statusId =>
+            SelectedDeliveryAutomationStatus({ field, statusId }),
+          ),
+          h.Class(
+            'mt-2 w-full cursor-pointer rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-100 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30',
+          ),
+        ],
+        [
+          ...(hasSelectedStatus
+            ? []
+            : [
+                h.option(
+                  [h.Value(value), h.Selected(true), h.Disabled(true)],
+                  [`Missing status (${value})`],
+                ),
+              ]),
+          ...Array.map(model.workspace.workflow.statuses, status =>
+            h.option(
+              [h.Value(status.id), h.Selected(status.id === value)],
+              [`${status.name} (${status.id})`],
+            ),
+          ),
+        ],
+      ),
+    ],
+  )
+}
+
+const deliveryAutomationEditor = (
+  model: Model,
+  automation: Workflow.DeliveryAutomation,
+): Html => {
+  const h = html<Message>()
+  const disclosure =
+    model.deliveryAutomationDisclosure ??
+    Disclosure.init({ id: 'delivery-automation-disclosure' })
+
+  return h.submodel({
+    slotId: 'delivery-automation-disclosure',
+    model: disclosure,
+    view: Disclosure.view,
+    viewInputs: {
+      toView: attributes =>
+        h.article(
+          [h.Class('rounded-xl border border-slate-800 bg-slate-900/70 p-3')],
+          [
+            h.button(
+              [
+                ...attributes.button,
+                h.Class(
+                  'flex w-full cursor-pointer select-none items-start justify-between gap-3 rounded-lg px-1 py-1 text-left hover:bg-slate-900 focus:outline-none focus:ring-0',
+                ),
+              ],
+              [
+                h.div(
+                  [h.Class('min-w-0')],
+                  [
+                    h.h3(
+                      [
+                        h.Class(
+                          'truncate text-sm font-semibold text-slate-100',
+                        ),
+                      ],
+                      ['Delivery automation'],
+                    ),
+                    h.p(
+                      [h.Class('mt-1 text-xs leading-5 text-slate-500')],
+                      ['Moves orders when shipment delivery progress changes.'],
+                    ),
+                  ],
+                ),
+                h.span(
+                  [h.Class('flex shrink-0 items-center gap-2')],
+                  [
+                    h.span(
+                      [
+                        h.Class(
+                          automation.enabled
+                            ? 'rounded-full bg-emerald-400/15 px-2 py-0.5 text-xs font-medium text-emerald-100'
+                            : 'rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-400',
+                        ),
+                      ],
+                      [automation.enabled ? 'Enabled' : 'Disabled'],
+                    ),
+                    chevronIcon(disclosure.isOpen),
+                  ],
+                ),
+              ],
+            ),
+            disclosure.isOpen
+              ? h.div(
+                  [...attributes.panel, h.Class('space-y-3 pt-3')],
+                  [
+                    h.label(
+                      [
+                        h.Class(
+                          'flex cursor-pointer items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/70 p-3',
+                        ),
+                      ],
+                      [
+                        h.input([
+                          h.Type('checkbox'),
+                          h.Checked(automation.enabled),
+                          h.OnClick(
+                            UpdatedDeliveryAutomationEnabled({
+                              value: !automation.enabled,
+                            }),
+                          ),
+                          h.Class(
+                            'mt-0.5 h-4 w-4 cursor-pointer rounded border-slate-700 bg-slate-950',
+                          ),
+                        ]),
+                        h.span(
+                          [h.Class('min-w-0')],
+                          [
+                            h.span(
+                              [
+                                h.Class(
+                                  'block text-sm font-semibold text-slate-100',
+                                ),
+                              ],
+                              ['Enabled'],
+                            ),
+                            h.span(
+                              [
+                                h.Class(
+                                  'mt-1 block text-xs leading-5 text-slate-500',
+                                ),
+                              ],
+                              [
+                                automation.enabled
+                                  ? 'Shipment updates can move orders automatically.'
+                                  : 'Keep the configuration but stop applying it.',
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    deliveryAutomationStatusSelect(
+                      model,
+                      'Fully delivered status',
+                      'fullyDeliveredStatusId',
+                      automation.fullyDeliveredStatusId,
+                    ),
+                    deliveryAutomationStatusSelect(
+                      model,
+                      'Partially delivered status',
+                      'partiallyDeliveredStatusId',
+                      automation.partiallyDeliveredStatusId,
+                    ),
+                    deliveryAutomationStatusSelect(
+                      model,
+                      'Partial completion required status',
+                      'partiallyDeliveredCompletionRequiredStatusId',
+                      automation.partiallyDeliveredCompletionRequiredStatusId,
+                    ),
+                    h.button(
+                      [
+                        h.Type('button'),
+                        h.OnClick(ClickedRemovedDeliveryAutomation()),
+                        h.Class(
+                          'w-full cursor-pointer rounded-lg border border-red-400/40 bg-red-400/10 px-3 py-2 text-sm font-semibold text-red-100 hover:bg-red-400/20 focus:outline-none focus:ring-2 focus:ring-red-300',
+                        ),
+                      ],
+                      ['Remove delivery automation'],
+                    ),
+                  ],
+                )
+              : h.empty,
+          ],
+        ),
+    },
+    toParentMessage: message =>
+      GotDeliveryAutomationDisclosureMessage({ message }),
+  })
+}
+
+const automations = (model: Model): Html => {
+  const h = html<Message>()
+  const disclosure =
+    model.automationsDisclosure ??
+    Disclosure.init({ id: 'automations-disclosure' })
+  const automation = model.workspace.workflow.deliveryAutomation
+  const canAddDeliveryAutomation =
+    model.workspace.selectedFlowDocumentType === 'order'
+
+  return h.submodel({
+    slotId: 'automations-disclosure',
+    model: disclosure,
+    view: Disclosure.view,
+    viewInputs: {
+      toView: attributes =>
+        h.section(
+          [h.Class('space-y-3')],
+          [
+            h.button(
+              [...attributes.button, h.Class(disclosureButtonClass)],
+              [
+                h.span([], ['Automations']),
+                h.span(
+                  [h.Class('flex items-center gap-2')],
+                  [
+                    h.span(
+                      [
+                        h.Class(
+                          'rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-400',
+                        ),
+                      ],
+                      [automation === undefined ? '0' : '1'],
+                    ),
+                    chevronIcon(disclosure.isOpen),
+                  ],
+                ),
+              ],
+            ),
+            disclosure.isOpen
+              ? h.div(
+                  [...attributes.panel, h.Class('space-y-3')],
+                  [
+                    automation === undefined
+                      ? h.div(
+                          [
+                            h.Class(
+                              'space-y-3 rounded-xl border border-dashed border-slate-800 p-4',
+                            ),
+                          ],
+                          [
+                            h.p(
+                              [h.Class('text-sm text-slate-400')],
+                              [
+                                canAddDeliveryAutomation
+                                  ? 'No automations are configured for this flow.'
+                                  : 'Delivery automation is available for order flows.',
+                              ],
+                            ),
+                            h.button(
+                              [
+                                h.Type('button'),
+                                h.OnClick(ClickedAddedDeliveryAutomation()),
+                                ...(!canAddDeliveryAutomation
+                                  ? [h.Disabled(true)]
+                                  : []),
+                                h.Class(
+                                  canAddDeliveryAutomation
+                                    ? 'w-full cursor-pointer rounded-lg bg-sky-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-300'
+                                    : 'w-full cursor-not-allowed rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-600',
+                                ),
+                              ],
+                              ['Add delivery automation'],
+                            ),
+                          ],
+                        )
+                      : deliveryAutomationEditor(model, automation),
+                  ],
+                )
+              : h.empty,
+          ],
+        ),
+    },
+    toParentMessage: message => GotAutomationsDisclosureMessage({ message }),
+  })
+}
+
 const flowHistory = (model: Model): Html => {
   const h = html<Message>()
   const disclosure =
@@ -1269,6 +1531,7 @@ const leftPanel = (model: Model): Html => {
                 ],
               ),
               remoteFlowActions(model),
+              automations(model),
               flowHistory(model),
             ],
           ),
@@ -1312,7 +1575,6 @@ const nodePanelIdField = (status: Workflow.Status): Html => {
         ['Status ID'],
       ),
       h.input([
-        h.Key(`node-id-${status.id}`),
         h.Type('text'),
         h.Value(status.id),
         h.OnInput(value => UpdatedStatusId({ statusId: status.id, value })),

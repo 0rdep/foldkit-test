@@ -55,6 +55,12 @@ export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => {
   const flowHistoryDisclosure = Disclosure.init({
     id: 'flow-history-disclosure',
   })
+  const automationsDisclosure = Disclosure.init({
+    id: 'automations-disclosure',
+  })
+  const deliveryAutomationDisclosure = Disclosure.init({
+    id: 'delivery-automation-disclosure',
+  })
   const incomingTransitionsDisclosure = Disclosure.init({
     id: 'incoming-transitions-disclosure',
   })
@@ -69,6 +75,8 @@ export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => {
       pendingOperations: () => pendingOperations,
     }),
     leftPanelState: LeftPanelOpen(),
+    automationsDisclosure,
+    deliveryAutomationDisclosure,
     flowHistoryDisclosure,
     incomingTransitionsDisclosure,
     outgoingTransitionsDisclosure,

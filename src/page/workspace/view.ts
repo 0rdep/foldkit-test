@@ -1742,7 +1742,6 @@ const statusInspector = (model: Model, statusId: string): Html => {
                 value: status.id,
                 onInput: value => UpdatedStatusId({ statusId: status.id, value }),
                 className: inputClass,
-                attributes: [h.Key(`status-id-${status.id}`)],
               }),
               uiInput({
                 id: 'status-name',

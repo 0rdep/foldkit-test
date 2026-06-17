@@ -10,10 +10,12 @@ export {
   ClickedClosedGraphContextMenu,
   ClickedDeletedStatus,
   ClickedDeletedTransition,
+  ClickedAddedDeliveryAutomation,
   ClickedLoadedRemoteFlowDefinitions,
   ClickedMovedTransitionEarlier,
   ClickedMovedTransitionLater,
   ClickedPublishedRemoteFlow,
+  ClickedRemovedDeliveryAutomation,
   ClickedSavedRemoteFlowDraft,
   ClickedSelectedWorkflow,
   ClickedToggledStatusActionDisclosure,
@@ -27,11 +29,13 @@ export {
   PressedTransitionOutput,
   ReleasedGraphCanvasPointer,
   ReleasedTransitionInput,
+  SelectedDeliveryAutomationStatus,
   SelectedStatus,
   SelectedStatusType,
   SelectedTransitionFromStatus,
   SelectedTransitionToStatus,
   SuppressedNativeGraphContextMenu,
+  UpdatedDeliveryAutomationEnabled,
   UpdatedFlowDocumentType,
   UpdatedStatusId,
   UpdatedStatusName,
@@ -61,6 +65,14 @@ export const GotFlowHistoryDisclosureMessage = m(
   'GotFlowHistoryDisclosureMessage',
   { message: Disclosure.Message },
 )
+export const GotAutomationsDisclosureMessage = m(
+  'GotAutomationsDisclosureMessage',
+  { message: Disclosure.Message },
+)
+export const GotDeliveryAutomationDisclosureMessage = m(
+  'GotDeliveryAutomationDisclosureMessage',
+  { message: Disclosure.Message },
+)
 export const GotIncomingTransitionsDisclosureMessage = m(
   'GotIncomingTransitionsDisclosureMessage',
   { message: Disclosure.Message },
@@ -87,6 +99,8 @@ export const Message = S.Union([
   ClickedHidLeftPanel,
   ClickedOpenedLeftPanel,
   GotFlowHistoryDisclosureMessage,
+  GotAutomationsDisclosureMessage,
+  GotDeliveryAutomationDisclosureMessage,
   GotIncomingTransitionsDisclosureMessage,
   GotOutgoingTransitionsDisclosureMessage,
   GotNodeTransitionDisclosureMessage,

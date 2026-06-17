@@ -413,6 +413,57 @@ const nextTransitionBetween = (
   effects: [],
 })
 
+const preferredStatusId = (
+  workflow: Workflow.WorkflowDefinition,
+  statusId: string,
+): string =>
+  Option.isSome(Workflow.findStatus(workflow, statusId))
+    ? statusId
+    : (workflow.statuses[0]?.id ?? '')
+
+const defaultDeliveryAutomation = (
+  workflow: Workflow.WorkflowDefinition,
+): Workflow.DeliveryAutomation => ({
+  enabled: true,
+  fullyDeliveredStatusId: preferredStatusId(workflow, 'DELIVERED'),
+  partiallyDeliveredStatusId: preferredStatusId(
+    workflow,
+    'PARTIALLY_DELIVERED',
+  ),
+  partiallyDeliveredCompletionRequiredStatusId: preferredStatusId(
+    workflow,
+    'PARTIALLY_DELIVERED_COMPLETION_REQUIRED',
+  ),
+})
+
+const updateDeliveryAutomation = (
+  workflow: Workflow.WorkflowDefinition,
+  f: (automation: Workflow.DeliveryAutomation) => Workflow.DeliveryAutomation,
+): Workflow.WorkflowDefinition =>
+  evo(workflow, {
+    deliveryAutomation: automation =>
+      f(automation ?? defaultDeliveryAutomation(workflow)),
+  })
+
+const setDeliveryAutomationStatus = (
+  automation: Workflow.DeliveryAutomation,
+  field:
+    | 'fullyDeliveredStatusId'
+    | 'partiallyDeliveredStatusId'
+    | 'partiallyDeliveredCompletionRequiredStatusId',
+  statusId: string,
+): Workflow.DeliveryAutomation => {
+  if (field === 'fullyDeliveredStatusId') {
+    return evo(automation, { fullyDeliveredStatusId: () => statusId })
+  }
+  if (field === 'partiallyDeliveredStatusId') {
+    return evo(automation, { partiallyDeliveredStatusId: () => statusId })
+  }
+  return evo(automation, {
+    partiallyDeliveredCompletionRequiredStatusId: () => statusId,
+  })
+}
+
 const canCreateTransitionFromStatus = (status: Workflow.Status): boolean =>
   status.type !== 'final'
 
@@ -1054,6 +1105,69 @@ export const update = (model: Model, message: Message): UpdateReturn => {
                 }),
               ),
             banner: () => 'Effect intent removed',
+          }),
+          model,
+        ),
+
+      ClickedAddedDeliveryAutomation: () => {
+        if (model.selectedFlowDocumentType !== 'order') {
+          return [
+            evo(model, {
+              banner: () => 'Delivery automation is available for order flows',
+            }),
+            [],
+          ]
+        }
+
+        if (model.workflow.deliveryAutomation !== undefined) {
+          return [
+            evo(model, { banner: () => 'Delivery automation already exists' }),
+            [],
+          ]
+        }
+
+        return saveFlowChange(
+          evo(model, {
+            workflow: workflow =>
+              evo(workflow, {
+                deliveryAutomation: () => defaultDeliveryAutomation(workflow),
+              }),
+            banner: () => 'Delivery automation added',
+          }),
+          model,
+        )
+      },
+
+      ClickedRemovedDeliveryAutomation: () =>
+        saveFlowChange(
+          evo(model, {
+            workflow: workflow =>
+              evo(workflow, { deliveryAutomation: () => undefined }),
+            banner: () => 'Delivery automation removed',
+          }),
+          model,
+        ),
+
+      UpdatedDeliveryAutomationEnabled: ({ value }) =>
+        saveFlowChange(
+          evo(model, {
+            workflow: workflow =>
+              updateDeliveryAutomation(workflow, automation =>
+                evo(automation, { enabled: () => value }),
+              ),
+            banner: () => 'Delivery automation updated',
+          }),
+          model,
+        ),
+
+      SelectedDeliveryAutomationStatus: ({ field, statusId }) =>
+        saveFlowChange(
+          evo(model, {
+            workflow: workflow =>
+              updateDeliveryAutomation(workflow, automation =>
+                setDeliveryAutomationStatus(automation, field, statusId),
+              ),
+            banner: () => 'Delivery automation updated',
           }),
           model,
         ),

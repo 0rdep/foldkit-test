@@ -12,6 +12,8 @@ export type LeftPanelState = typeof LeftPanelState.Type
 export const Model = S.Struct({
   workspace: Workspace.Model.Model,
   leftPanelState: S.optional(LeftPanelState),
+  automationsDisclosure: S.optional(Disclosure.Model),
+  deliveryAutomationDisclosure: S.optional(Disclosure.Model),
   flowHistoryDisclosure: S.optional(Disclosure.Model),
   incomingTransitionsDisclosure: S.optional(Disclosure.Model),
   outgoingTransitionsDisclosure: S.optional(Disclosure.Model),
