@@ -40,12 +40,16 @@ fragment FlowDefinitionFields on FlowDefinition {
   }
   transitions {
     id
-    label
     fromStatusId
     toStatusId
     allowedRoles
-    requiresComment
-    sortOrder
+    automationOnly
+  }
+  deliveryAutomation {
+    enabled
+    fullyDeliveredStatusId
+    partiallyDeliveredStatusId
+    partiallyDeliveredCompletionRequiredStatusId
   }
 }
 `
@@ -78,12 +82,16 @@ fragment FlowDefinitionFields on FlowDefinition {
   }
   transitions {
     id
-    label
     fromStatusId
     toStatusId
     allowedRoles
-    requiresComment
-    sortOrder
+    automationOnly
+  }
+  deliveryAutomation {
+    enabled
+    fullyDeliveredStatusId
+    partiallyDeliveredStatusId
+    partiallyDeliveredCompletionRequiredStatusId
   }
 }
 `
@@ -116,12 +124,16 @@ fragment FlowDefinitionFields on FlowDefinition {
   }
   transitions {
     id
-    label
     fromStatusId
     toStatusId
     allowedRoles
-    requiresComment
-    sortOrder
+    automationOnly
+  }
+  deliveryAutomation {
+    enabled
+    fullyDeliveredStatusId
+    partiallyDeliveredStatusId
+    partiallyDeliveredCompletionRequiredStatusId
   }
 }
 `
@@ -154,12 +166,16 @@ fragment FlowDefinitionFields on FlowDefinition {
   }
   transitions {
     id
-    label
     fromStatusId
     toStatusId
     allowedRoles
-    requiresComment
-    sortOrder
+    automationOnly
+  }
+  deliveryAutomation {
+    enabled
+    fullyDeliveredStatusId
+    partiallyDeliveredStatusId
+    partiallyDeliveredCompletionRequiredStatusId
   }
 }
 `

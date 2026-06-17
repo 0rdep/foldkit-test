@@ -8,6 +8,7 @@ import {
   DEFAULT_NEXT_SEQUENCE,
   DEFAULT_WORKFLOW,
 } from '../../constant'
+import { defaultWorkflowForDocumentType } from '../../default-flow-definitions'
 import { Workflow } from '../../domain'
 import * as MockBackend from '../../mockBackend'
 import {
@@ -19,9 +20,9 @@ import {
 } from './command'
 import { type Message } from './message'
 import {
+  type FlowDocumentType,
   GraphCanvasContextMenu,
   GraphContextMenuClosed,
-  type FlowDocumentType,
   GraphNodeContextMenu,
   GraphPanIdle,
   GraphPanning,
@@ -294,6 +295,36 @@ const toggleTransitionRole = (
         : [...allowedRoles, roleId],
   })
 
+const moveTransition = (
+  transitions: ReadonlyArray<Workflow.Transition>,
+  transitionId: string,
+  offset: number,
+): ReadonlyArray<Workflow.Transition> => {
+  const index = transitions.findIndex(transition => transition.id === transitionId)
+  const targetIndex = index + offset
+
+  if (index < 0 || targetIndex < 0 || targetIndex >= transitions.length) {
+    return transitions
+  }
+
+  const transition = transitions[index]
+  const targetTransition = transitions[targetIndex]
+
+  if (transition === undefined || targetTransition === undefined) {
+    return transitions
+  }
+
+  return Array.map(transitions, (currentTransition, currentIndex) => {
+    if (currentIndex === index) {
+      return targetTransition
+    }
+    if (currentIndex === targetIndex) {
+      return transition
+    }
+    return currentTransition
+  })
+}
+
 const nextStatus = (model: Model): Workflow.Status => ({
   id: `status-${model.nextSequence}`,
   name: `New status ${model.nextSequence}`,
@@ -305,10 +336,8 @@ const nextTransition = (model: Model): Workflow.Transition => ({
   id: `transition-${model.nextSequence}`,
   fromStatusId: model.selectedStatusId,
   toStatusId: model.workflow.initialStatusId,
-  label: `New transition ${model.nextSequence}`,
   allowedRoles: ['OrderModerator', 'SystemAdmin'],
-  requiresComment: false,
-  sortOrder: `z${model.nextSequence}`,
+  automationOnly: false,
   effects: [],
 })
 
@@ -320,10 +349,8 @@ const nextTransitionBetween = (
   id: `transition-${model.nextSequence}`,
   fromStatusId,
   toStatusId,
-  label: `New transition ${model.nextSequence}`,
   allowedRoles: ['OrderModerator', 'SystemAdmin'],
-  requiresComment: false,
-  sortOrder: `z${model.nextSequence}`,
+  automationOnly: false,
   effects: [],
 })
 
@@ -339,6 +366,52 @@ const canCreateTransitionBetween = (
   toStatusId: string,
 ): boolean => {
   if (fromStatusId === toStatusId) {
+    return false
+  }
+
+  if (
+    Array.some(
+      workflow.transitions,
+      transition =>
+        transition.fromStatusId === fromStatusId &&
+        transition.toStatusId === toStatusId,
+    )
+  ) {
+    return false
+  }
+
+  return Option.match(
+    Option.all({
+      from: Workflow.findStatus(workflow, fromStatusId),
+      to: Workflow.findStatus(workflow, toStatusId),
+    }),
+    {
+      onNone: () => false,
+      onSome: ({ from, to }) =>
+        canCreateTransitionFromStatus(from) && canCreateTransitionToStatus(to),
+    },
+  )
+}
+
+const canUpdateTransitionBetween = (
+  workflow: Workflow.WorkflowDefinition,
+  transitionId: string,
+  fromStatusId: string,
+  toStatusId: string,
+): boolean => {
+  if (fromStatusId === toStatusId) {
+    return false
+  }
+
+  if (
+    Array.some(
+      workflow.transitions,
+      transition =>
+        transition.id !== transitionId &&
+        transition.fromStatusId === fromStatusId &&
+        transition.toStatusId === toStatusId,
+    )
+  ) {
     return false
   }
 
@@ -368,6 +441,31 @@ const removeStatusFromWorkflow = (
         transition =>
           transition.fromStatusId !== statusId &&
           transition.toStatusId !== statusId,
+      ),
+  })
+
+const updateStatusIdInWorkflow = (
+  workflow: Workflow.WorkflowDefinition,
+  statusId: string,
+  nextStatusId: string,
+): Workflow.WorkflowDefinition =>
+  evo(workflow, {
+    initialStatusId: initialStatusId =>
+      initialStatusId === statusId ? nextStatusId : initialStatusId,
+    statuses: statuses =>
+      Array.map(statuses, status =>
+        status.id === statusId
+          ? evo(status, { id: () => nextStatusId })
+          : status,
+      ),
+    transitions: transitions =>
+      Array.map(transitions, transition =>
+        evo(transition, {
+          fromStatusId: fromStatusId =>
+            fromStatusId === statusId ? nextStatusId : fromStatusId,
+          toStatusId: toStatusId =>
+            toStatusId === statusId ? nextStatusId : toStatusId,
+        }),
       ),
   })
 
@@ -539,6 +637,41 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           model,
         ),
 
+      UpdatedStatusId: ({ statusId, value }) => {
+        const nextStatusId = value.trim()
+        if (nextStatusId === '' || nextStatusId === statusId) {
+          return [model, []]
+        }
+
+        if (
+          Array.some(
+            model.workflow.statuses,
+            status => status.id === nextStatusId,
+          )
+        ) {
+          return [evo(model, { banner: () => 'Status id already exists' }), []]
+        }
+
+        return saveFlowChange(
+          evo(model, {
+            workflow: workflow =>
+              updateStatusIdInWorkflow(workflow, statusId, nextStatusId),
+            documents: documents =>
+              Array.map(documents, document =>
+                document.currentStatusId === statusId
+                  ? evo(document, { currentStatusId: () => nextStatusId })
+                  : document,
+              ),
+            selectedStatusId: selectedStatusId =>
+              selectedStatusId === statusId ? nextStatusId : selectedStatusId,
+            selectedItemId: selectedItemId =>
+              selectedItemId === statusId ? nextStatusId : selectedItemId,
+            banner: () => 'Status id updated',
+          }),
+          model,
+        )
+      },
+
       SelectedStatusType: ({ statusId, value }) =>
         saveFlowChange(
           evo(model, {
@@ -646,30 +779,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         [],
       ],
 
-      UpdatedTransitionLabel: ({ transitionId, value }) =>
-        saveFlowChange(
-          evo(model, {
-            workflow: workflow =>
-              Workflow.updateTransition(workflow, transitionId, transition =>
-                evo(transition, { label: () => value }),
-              ),
-            banner: () => 'Transition label updated',
-          }),
-          model,
-        ),
-
-      UpdatedTransitionSortOrder: ({ transitionId, value }) =>
-        saveFlowChange(
-          evo(model, {
-            workflow: workflow =>
-              Workflow.updateTransition(workflow, transitionId, transition =>
-                evo(transition, { sortOrder: () => value }),
-              ),
-            banner: () => 'Transition sort order updated',
-          }),
-          model,
-        ),
-
       ClickedToggledTransitionRole: ({ transitionId, roleId }) =>
         saveFlowChange(
           evo(model, {
@@ -682,29 +791,124 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           model,
         ),
 
-      SelectedTransitionFromStatus: ({ transitionId, statusId }) =>
+      UpdatedTransitionAutomationOnly: ({ transitionId, value }) =>
         saveFlowChange(
           evo(model, {
             workflow: workflow =>
               Workflow.updateTransition(workflow, transitionId, transition =>
-                evo(transition, { fromStatusId: () => statusId }),
+                evo(transition, {
+                  automationOnly: () => value,
+                  allowedRoles: allowedRoles => (value ? [] : allowedRoles),
+                }),
               ),
-            banner: () => 'Transition source updated',
+            banner: () => 'Transition automation setting updated',
           }),
           model,
         ),
 
-      SelectedTransitionToStatus: ({ transitionId, statusId }) =>
-        saveFlowChange(
+      ClickedMovedTransitionEarlier: ({ transitionId }) => {
+        const nextTransitions = moveTransition(
+          model.workflow.transitions,
+          transitionId,
+          -1,
+        )
+
+        if (nextTransitions === model.workflow.transitions) {
+          return [model, []]
+        }
+
+        return saveFlowChange(
           evo(model, {
             workflow: workflow =>
-              Workflow.updateTransition(workflow, transitionId, transition =>
-                evo(transition, { toStatusId: () => statusId }),
-              ),
-            banner: () => 'Transition target updated',
+              evo(workflow, { transitions: () => nextTransitions }),
+            banner: () => 'Transition moved earlier',
           }),
           model,
-        ),
+        )
+      },
+
+      ClickedMovedTransitionLater: ({ transitionId }) => {
+        const nextTransitions = moveTransition(
+          model.workflow.transitions,
+          transitionId,
+          1,
+        )
+
+        if (nextTransitions === model.workflow.transitions) {
+          return [model, []]
+        }
+
+        return saveFlowChange(
+          evo(model, {
+            workflow: workflow =>
+              evo(workflow, { transitions: () => nextTransitions }),
+            banner: () => 'Transition moved later',
+          }),
+          model,
+        )
+      },
+
+      SelectedTransitionFromStatus: ({ transitionId, statusId }) =>
+        Option.match(Workflow.findTransition(model.workflow, transitionId), {
+          onNone: () => [model, []],
+          onSome: transition =>
+            canUpdateTransitionBetween(
+              model.workflow,
+              transitionId,
+              statusId,
+              transition.toStatusId,
+            )
+              ? saveFlowChange(
+                  evo(model, {
+                    workflow: workflow =>
+                      Workflow.updateTransition(
+                        workflow,
+                        transitionId,
+                        transition =>
+                          evo(transition, { fromStatusId: () => statusId }),
+                      ),
+                    banner: () => 'Transition source updated',
+                  }),
+                  model,
+                )
+              : [
+                  evo(model, {
+                    banner: () => 'Transition source is not valid',
+                  }),
+                  [],
+                ],
+        }),
+
+      SelectedTransitionToStatus: ({ transitionId, statusId }) =>
+        Option.match(Workflow.findTransition(model.workflow, transitionId), {
+          onNone: () => [model, []],
+          onSome: transition =>
+            canUpdateTransitionBetween(
+              model.workflow,
+              transitionId,
+              transition.fromStatusId,
+              statusId,
+            )
+              ? saveFlowChange(
+                  evo(model, {
+                    workflow: workflow =>
+                      Workflow.updateTransition(
+                        workflow,
+                        transitionId,
+                        transition =>
+                          evo(transition, { toStatusId: () => statusId }),
+                      ),
+                    banner: () => 'Transition target updated',
+                  }),
+                  model,
+                )
+              : [
+                  evo(model, {
+                    banner: () => 'Transition target is not valid',
+                  }),
+                  [],
+                ],
+        }),
 
       ClickedAddedTransition: () => {
         const transition = nextTransition(model)
@@ -1082,7 +1286,11 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       ClickedResetWorkspace: () => withSavedWorkspace(resetModel()),
 
       ClickedAppliedDefaultFlow: () =>
-        applyWorkflowContents(model, DEFAULT_WORKFLOW, 'Default flow applied'),
+        applyWorkflowContents(
+          model,
+          defaultWorkflowForDocumentType(model.selectedFlowDocumentType),
+          'Default flow restored',
+        ),
 
       ClickedLoadedRemoteFlowDefinitions: () => [
         evo(model, {
@@ -1211,7 +1419,10 @@ export const update = (model: Model, message: Message): UpdateReturn =>
             selectedCompanyId === model.targetCompanyId ? flowHistory : [],
         })
 
-        if (selectedCompanyId === '' || selectedCompanyId === model.targetCompanyId) {
+        if (
+          selectedCompanyId === '' ||
+          selectedCompanyId === model.targetCompanyId
+        ) {
           return [nextModel, []]
         }
 

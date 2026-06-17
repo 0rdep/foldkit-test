@@ -19,6 +19,10 @@ export const UpdatedStatusName = m('UpdatedStatusName', {
   statusId: S.String,
   value: S.String,
 })
+export const UpdatedStatusId = m('UpdatedStatusId', {
+  statusId: S.String,
+  value: S.String,
+})
 export const SelectedStatusType = m('SelectedStatusType', {
   statusId: S.String,
   value: Workflow.StatusType,
@@ -45,17 +49,23 @@ export const ClickedDeletedStatus = m('ClickedDeletedStatus', {
 export const SelectedTransition = m('SelectedTransition', {
   transitionId: S.String,
 })
-export const UpdatedTransitionLabel = m('UpdatedTransitionLabel', {
-  transitionId: S.String,
-  value: S.String,
-})
-export const UpdatedTransitionSortOrder = m('UpdatedTransitionSortOrder', {
-  transitionId: S.String,
-  value: S.String,
-})
 export const ClickedToggledTransitionRole = m('ClickedToggledTransitionRole', {
   transitionId: S.String,
   roleId: S.String,
+})
+export const UpdatedTransitionAutomationOnly = m(
+  'UpdatedTransitionAutomationOnly',
+  {
+    transitionId: S.String,
+    value: S.Boolean,
+  },
+)
+export const ClickedMovedTransitionEarlier = m(
+  'ClickedMovedTransitionEarlier',
+  { transitionId: S.String },
+)
+export const ClickedMovedTransitionLater = m('ClickedMovedTransitionLater', {
+  transitionId: S.String,
 })
 export const SelectedTransitionFromStatus = m('SelectedTransitionFromStatus', {
   transitionId: S.String,
@@ -191,15 +201,17 @@ export const Message = S.Union([
   ClickedUndidFlowChanges,
   SelectedStatus,
   UpdatedStatusName,
+  UpdatedStatusId,
   SelectedStatusType,
   ClickedToggledStatusActionRole,
   ClickedToggledStatusActionDisclosure,
   ClickedAddedStatus,
   ClickedDeletedStatus,
   SelectedTransition,
-  UpdatedTransitionLabel,
-  UpdatedTransitionSortOrder,
   ClickedToggledTransitionRole,
+  UpdatedTransitionAutomationOnly,
+  ClickedMovedTransitionEarlier,
+  ClickedMovedTransitionLater,
   SelectedTransitionFromStatus,
   SelectedTransitionToStatus,
   ClickedAddedTransition,

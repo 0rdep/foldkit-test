@@ -82,6 +82,7 @@ export type CompanySettingsQueriesFindArgs = {
 };
 
 export type CreateFlowDefinitionInput = {
+  readonly deliveryAutomation: InputMaybe<FlowDeliveryAutomationDefinitionInput>;
   readonly documentType: FlowDocumentType;
   readonly initialStatusId: Scalars['ID']['input'];
   readonly name: Scalars['String']['input'];
@@ -128,6 +129,7 @@ export type FlowBlockedTransition = {
 export type FlowDefinition = {
   readonly __typename?: 'FlowDefinition';
   readonly companyId: Maybe<Scalars['Int']['output']>;
+  readonly deliveryAutomation: Maybe<FlowDeliveryAutomationDefinition>;
   readonly documentType: FlowDocumentType;
   readonly id: Scalars['ID']['output'];
   readonly initialStatusId: Scalars['ID']['output'];
@@ -136,6 +138,21 @@ export type FlowDefinition = {
   readonly statuses: ReadonlyArray<FlowStatusDefinition>;
   readonly transitions: ReadonlyArray<FlowTransitionDefinition>;
   readonly version: Scalars['Int']['output'];
+};
+
+export type FlowDeliveryAutomationDefinition = {
+  readonly __typename?: 'FlowDeliveryAutomationDefinition';
+  readonly enabled: Scalars['Boolean']['output'];
+  readonly fullyDeliveredStatusId: Scalars['ID']['output'];
+  readonly partiallyDeliveredCompletionRequiredStatusId: Scalars['ID']['output'];
+  readonly partiallyDeliveredStatusId: Scalars['ID']['output'];
+};
+
+export type FlowDeliveryAutomationDefinitionInput = {
+  readonly enabled: Scalars['Boolean']['input'];
+  readonly fullyDeliveredStatusId: Scalars['ID']['input'];
+  readonly partiallyDeliveredCompletionRequiredStatusId: Scalars['ID']['input'];
+  readonly partiallyDeliveredStatusId: Scalars['ID']['input'];
 };
 
 export type FlowDefinitionState =
@@ -299,23 +316,19 @@ export type FlowStatusKind =
   | 'normal';
 
 export type FlowTransitionDefinition = {
-  readonly __typename?: 'FlowTransitionDefinition';
-  readonly allowedRoles: ReadonlyArray<Scalars['String']['output']>;
-  readonly fromStatusId: Scalars['ID']['output'];
+	readonly __typename?: 'FlowTransitionDefinition';
+	readonly allowedRoles: ReadonlyArray<Scalars['String']['output']>;
+	readonly automationOnly: Maybe<Scalars['Boolean']['output']>;
+	readonly fromStatusId: Scalars['ID']['output'];
   readonly id: Scalars['ID']['output'];
-  readonly label: Scalars['String']['output'];
-  readonly requiresComment: Maybe<Scalars['Boolean']['output']>;
-  readonly sortOrder: Scalars['String']['output'];
   readonly toStatusId: Scalars['ID']['output'];
 };
 
 export type FlowTransitionDefinitionInput = {
-  readonly allowedRoles: ReadonlyArray<Scalars['String']['input']>;
-  readonly fromStatusId: Scalars['ID']['input'];
+	readonly allowedRoles: ReadonlyArray<Scalars['String']['input']>;
+	readonly automationOnly: InputMaybe<Scalars['Boolean']['input']>;
+	readonly fromStatusId: Scalars['ID']['input'];
   readonly id: Scalars['ID']['input'];
-  readonly label: Scalars['String']['input'];
-  readonly requiresComment: InputMaybe<Scalars['Boolean']['input']>;
-  readonly sortOrder: Scalars['String']['input'];
   readonly toStatusId: Scalars['ID']['input'];
 };
 
@@ -506,6 +519,7 @@ export type UpdateCompanySettingsInput = {
 };
 
 export type UpdateFlowDraftInput = {
+  readonly deliveryAutomation: InputMaybe<FlowDeliveryAutomationDefinitionInput>;
   readonly initialStatusId: Scalars['ID']['input'];
   readonly name: InputMaybe<Scalars['String']['input']>;
   readonly statuses: ReadonlyArray<FlowStatusDefinitionInput>;

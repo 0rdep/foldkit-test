@@ -35,13 +35,13 @@ import {
   SelectedStatusType,
   SuppressedNativeGraphContextMenu,
   UpdatedFlowDocumentType,
+  UpdatedStatusId,
   UpdatedStatusName,
   UpdatedTargetCompanyId,
 } from './message'
 import type { Model } from './model'
 
 const statusTypes: ReadonlyArray<Workflow.StatusType> = [
-  'draft',
   'normal',
   'final',
 ]
@@ -65,7 +65,7 @@ const iconButtonClass =
   'rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50'
 const transitionStroke = '#94a3b8'
 const selectedTransitionStroke = '#FABD00'
-const incomingTransitionStroke = '#2563eb'
+const incomingTransitionStroke = '#facc15'
 const outgoingTransitionStroke = '#16a34a'
 
 const uiButton = (
@@ -203,7 +203,7 @@ const statusBadge = (status: Workflow.Status): Html => {
       h.Class(
         clsx('inline-flex rounded-full px-2.5 py-1 text-xs font-semibold', {
           'bg-blue-100 text-blue-800': status.type === 'draft',
-          'bg-emerald-100 text-emerald-800': status.type === 'final',
+          'bg-red-100 text-red-800': status.type === 'final',
           'bg-slate-100 text-slate-700': status.type === 'normal',
         }),
       ),
@@ -223,7 +223,7 @@ const nodeClass = (node: Graph.GraphNode, model: Model): string => {
       ? 'border-slate-900'
       : {
           'border-blue-300': node.status.type === 'draft',
-          'border-emerald-300': node.status.type === 'final',
+          'border-red-300': node.status.type === 'final',
           'border-slate-300': node.status.type === 'normal',
         },
   )
@@ -1384,6 +1384,24 @@ const trashIcon = (): Html => {
 const transitionRoleEditor = (transition: Workflow.Transition): Html => {
   const h = html<Message>()
 
+  if (transition.automationOnly === true) {
+    return h.div(
+      [h.Class('rounded-xl border border-amber-200 bg-amber-50 p-3')],
+      [
+        h.p(
+          [h.Class('text-sm font-semibold text-amber-900')],
+          ['Automation only'],
+        ),
+        h.p(
+          [h.Class('mt-1 text-xs leading-5 text-amber-800')],
+          [
+            'Company users cannot execute this transition manually. It is only applied by configured automations.',
+          ],
+        ),
+      ],
+    )
+  }
+
   return h.div(
     [h.Class('space-y-2')],
     [
@@ -1601,7 +1619,11 @@ const transitionDisclosureRow = (
                         'rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500',
                       ),
                     ],
-                    [`${transition.allowedRoles.length} roles`],
+                    [
+                      transition.automationOnly === true
+                        ? 'Automation'
+                        : `${transition.allowedRoles.length} roles`,
+                    ],
                   ),
                 ],
               ),
@@ -1622,6 +1644,42 @@ const transitionDisclosureRow = (
           'mt-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-700 transition hover:bg-red-100',
         children: [trashIcon()],
       }),
+    ],
+  )
+}
+
+const deliveryAutomationSection = (
+  workflow: Workflow.WorkflowDefinition,
+  status: Workflow.Status,
+): Html => {
+  const h = html<Message>()
+  const automation = workflow.deliveryAutomation
+
+  if (status.id !== 'AWAITING_DELIVERY' || automation === undefined) {
+    return h.empty
+  }
+
+  return h.div(
+    [h.Class('mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4')],
+    [
+      h.h3([h.Class('text-sm font-semibold text-amber-950')], [
+        'Delivery automation',
+      ]),
+      h.p([h.Class('mt-1 text-xs leading-5 text-amber-800')], [
+        automation.enabled
+          ? 'Shipment changes automatically move orders according to delivery completion.'
+          : 'Shipment changes do not automatically move orders for this flow.',
+      ]),
+      h.ul(
+        [h.Class('mt-3 space-y-1 text-xs text-amber-900')],
+        [
+          h.li([], [`Fully delivered: ${automation.fullyDeliveredStatusId}`]),
+          h.li([], [`Partial: ${automation.partiallyDeliveredStatusId}`]),
+          h.li([], [
+            `Completion required: ${automation.partiallyDeliveredCompletionRequiredStatusId}`,
+          ]),
+        ],
+      ),
     ],
   )
 }
@@ -1679,6 +1737,14 @@ const statusInspector = (model: Model, statusId: string): Html => {
             [h.Class('grid gap-4')],
             [
               uiInput({
+                id: 'status-id',
+                label: 'Status id',
+                value: status.id,
+                onInput: value => UpdatedStatusId({ statusId: status.id, value }),
+                className: inputClass,
+                attributes: [h.Key(`status-id-${status.id}`)],
+              }),
+              uiInput({
                 id: 'status-name',
                 label: 'Status display name',
                 value: status.name,
@@ -1710,6 +1776,7 @@ const statusInspector = (model: Model, statusId: string): Html => {
               }),
             ],
           ),
+          deliveryAutomationSection(model.workflow, status),
           statusEditableActionsSection(model, status),
           statusTransitionsSection(model, status),
         ],

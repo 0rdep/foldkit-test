@@ -31,13 +31,17 @@ export type FlowDefinitionFieldsFragment = {
   }>
   readonly transitions: ReadonlyArray<{
     readonly id: string
-    readonly label: string
     readonly fromStatusId: string
     readonly toStatusId: string
     readonly allowedRoles: ReadonlyArray<string>
-    readonly requiresComment: boolean | null
-    readonly sortOrder: string
+    readonly automationOnly: boolean | null
   }>
+  readonly deliveryAutomation: {
+    readonly enabled: boolean
+    readonly fullyDeliveredStatusId: string
+    readonly partiallyDeliveredStatusId: string
+    readonly partiallyDeliveredCompletionRequiredStatusId: string
+  } | null
 }
 
 export type FlowDefinitionsQuery = {

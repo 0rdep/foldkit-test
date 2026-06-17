@@ -1,17 +1,19 @@
 import { describe, expect, test } from 'vitest'
 
 import { DEFAULT_WORKFLOW } from './constant'
+import { DEFAULT_ORDER_FLOW } from './default-flow-definitions'
 import { Graph, Workflow } from './domain'
 import { defaultModel } from './main'
-import { CompletedSaveWorkspace } from './message'
 import {
   ClickedAppliedDefaultFlow,
   ClickedDeletedStatus,
   ClickedRequestedTransition,
   ClickedResetGraphViewport,
   ClickedRevertedFlowVersion,
+  ClickedToggledTransitionRole,
   ClickedZoomedGraphIn,
   ClickedZoomedGraphOut,
+  CompletedSaveWorkspace,
   MovedGraphCanvasPointer,
   PressedGraphCanvas,
   PressedTransitionOutput,
@@ -20,11 +22,12 @@ import {
   SelectedActor,
   SelectedStatus,
   SucceededLoadFlowHistory,
-} from './message'
-import { update } from './update'
+  UpdatedTransitionAutomationOnly,
+} from './page/workspace/message'
+import { update } from './page/workspace/update'
 
 const documentStatus = (model: ReturnType<typeof defaultModel>): string =>
-  model.workspace.documents[0]?.currentStatusId ?? ''
+  model.documents[0]?.currentStatusId ?? ''
 
 const graphStatus = (
   id: string,
@@ -45,10 +48,7 @@ const graphTransition = (
   id,
   fromStatusId,
   toStatusId,
-  label: id,
   allowedRoles: [],
-  requiresComment: false,
-  sortOrder: id,
   effects: [],
 })
 
@@ -143,9 +143,7 @@ describe('workflow engine update', () => {
     )
 
     expect(documentStatus(nextModel)).toBe('PENDING_APPROVAL')
-    expect(nextModel.workspace.documents[0]?.effectLog[0]?.type).toBe(
-      'SendNotification',
-    )
+    expect(nextModel.documents[0]?.effectLog[0]?.type).toBe('SendNotification')
     expect(commands.length).toBe(1)
   })
 
@@ -154,8 +152,8 @@ describe('workflow engine update', () => {
       defaultModel(),
       ClickedRequestedTransition({ transitionId: 'draft-to-pending-approval' }),
     )
-    const status = nextModel.workspace.workflow.statuses.find(
-      item => item.id === nextModel.workspace.documents[0]?.currentStatusId,
+    const status = nextModel.workflow.statuses.find(
+      item => item.id === nextModel.documents[0]?.currentStatusId,
     )
 
     const editPolicy = status?.editPolicy ?? Workflow.lockedEditPolicy
@@ -182,8 +180,8 @@ describe('workflow engine update', () => {
 
     expect(documentStatus(nextModel)).toBe('APPROVED')
     expect(
-      nextModel.workspace.documents[0]?.eventLog.map(event => event.label),
-    ).toContain('Maria Manager completed Approve')
+      nextModel.documents[0]?.eventLog.map(event => event.label),
+    ).toContain('Maria Manager completed Approved')
   })
 
   test('completed save messages do not change model', () => {
@@ -197,7 +195,7 @@ describe('workflow engine update', () => {
   test('reverting a historical flow version keeps the active draft identity', () => {
     const model = defaultModel()
     const currentWorkflow: Workflow.WorkflowDefinition = {
-      ...model.workspace.workflow,
+      ...model.workflow,
       id: 'flow-1',
       version: 2,
       state: 'draft',
@@ -211,7 +209,7 @@ describe('workflow engine update', () => {
       ),
     }
     const [withHistory] = update(
-      { workspace: { ...model.workspace, workflow: currentWorkflow } },
+      { ...model, workflow: currentWorkflow },
       SucceededLoadFlowHistory({ definitions: [previousWorkflow] }),
     )
     const [reverted, commands] = update(
@@ -219,21 +217,20 @@ describe('workflow engine update', () => {
       ClickedRevertedFlowVersion({ flowId: 'flow-1', version: 1 }),
     )
 
-    expect(reverted.workspace.workflow.id).toBe('flow-1')
-    expect(reverted.workspace.workflow.version).toBe(2)
-    expect(reverted.workspace.workflow.state).toBe('draft')
+    expect(reverted.workflow.id).toBe('flow-1')
+    expect(reverted.workflow.version).toBe(2)
+    expect(reverted.workflow.state).toBe('draft')
     expect(
-      reverted.workspace.workflow.statuses.find(status => status.id === 'DRAFT')
-        ?.name,
+      reverted.workflow.statuses.find(status => status.id === 'DRAFT')?.name,
     ).toBe('Old Draft')
-    expect(reverted.workspace.isDirty).toBe(true)
+    expect(reverted.isDirty).toBe(true)
     expect(commands.length).toBe(1)
   })
 
   test('applying the default flow keeps the active draft identity', () => {
     const model = defaultModel()
     const currentWorkflow: Workflow.WorkflowDefinition = {
-      ...model.workspace.workflow,
+      ...model.workflow,
       id: 'flow-1',
       name: 'Custom draft',
       version: 2,
@@ -244,31 +241,87 @@ describe('workflow engine update', () => {
     }
     const [applied, commands] = update(
       {
-        workspace: {
-          ...model.workspace,
-          workflow: currentWorkflow,
-          selectedStatusId: 'CUSTOM',
-          selectedItemKind: 'Status',
-          selectedItemId: 'CUSTOM',
-        },
+        ...model,
+        workflow: currentWorkflow,
+        selectedStatusId: 'CUSTOM',
+        selectedItemKind: 'Status',
+        selectedItemId: 'CUSTOM',
       },
       ClickedAppliedDefaultFlow(),
     )
 
-    expect(applied.workspace.workflow.id).toBe('flow-1')
-    expect(applied.workspace.workflow.version).toBe(2)
-    expect(applied.workspace.workflow.state).toBe('draft')
-    expect(applied.workspace.workflow.initialStatusId).toBe(
+    expect(applied.workflow.id).toBe('flow-1')
+    expect(applied.workflow.version).toBe(2)
+    expect(applied.workflow.state).toBe('draft')
+    expect(applied.workflow.initialStatusId).toBe(
       DEFAULT_WORKFLOW.initialStatusId,
     )
-    expect(
-      applied.workspace.workflow.statuses.map(status => status.id),
-    ).toEqual(DEFAULT_WORKFLOW.statuses.map(status => status.id))
-    expect(applied.workspace.selectedStatusId).toBe(
-      DEFAULT_WORKFLOW.initialStatusId,
+    expect(applied.workflow.statuses.map(status => status.id)).toEqual(
+      DEFAULT_WORKFLOW.statuses.map(status => status.id),
     )
-    expect(applied.workspace.isDirty).toBe(true)
+    expect(applied.selectedStatusId).toBe(DEFAULT_WORKFLOW.initialStatusId)
+    expect(applied.isDirty).toBe(true)
     expect(commands.length).toBe(1)
+  })
+
+  test('applying the default flow uses the selected document type', () => {
+    const model = defaultModel()
+    const currentWorkflow: Workflow.WorkflowDefinition = {
+      ...model.workflow,
+      id: 'flow-1',
+      name: 'Custom order draft',
+      documentType: 'order',
+      version: 3,
+      state: 'draft',
+      initialStatusId: 'CUSTOM',
+      statuses: [graphStatus('CUSTOM', 'Custom status', 'draft')],
+      transitions: [],
+    }
+    const [applied] = update(
+      {
+        ...model,
+        workflow: currentWorkflow,
+        selectedFlowDocumentType: 'order',
+        selectedStatusId: 'CUSTOM',
+        selectedItemKind: 'Status',
+        selectedItemId: 'CUSTOM',
+      },
+      ClickedAppliedDefaultFlow(),
+    )
+
+    expect(applied.workflow.id).toBe('flow-1')
+    expect(applied.workflow.version).toBe(3)
+    expect(applied.workflow.state).toBe('draft')
+    expect(applied.workflow.documentType).toBe('order')
+    expect(applied.workflow.statuses.map(status => status.id)).toEqual(
+      DEFAULT_ORDER_FLOW.statuses.map(status => status.id),
+    )
+    expect(applied.selectedStatusId).toBe(DEFAULT_ORDER_FLOW.initialStatusId)
+  })
+
+  test('automation-only transitions can be made manual and assigned roles', () => {
+    const model = defaultModel()
+    const transitionId =
+      'awaiting-delivery-to-partially-delivered-completion-required'
+    const orderModel = {
+      ...model,
+      workflow: DEFAULT_ORDER_FLOW,
+      selectedFlowDocumentType: 'order' as const,
+    }
+    const [manual] = update(
+      orderModel,
+      UpdatedTransitionAutomationOnly({ transitionId, value: false }),
+    )
+    const [withRole] = update(
+      manual,
+      ClickedToggledTransitionRole({ transitionId, roleId: 'SystemAdmin' }),
+    )
+    const transition = withRole.workflow.transitions.find(
+      item => item.id === transitionId,
+    )
+
+    expect(transition?.automationOnly).toBe(false)
+    expect(transition?.allowedRoles).toContain('SystemAdmin')
   })
 
   test('dragging the graph viewport updates pan without saving workspace', () => {
@@ -282,9 +335,9 @@ describe('workflow engine update', () => {
     )
     const [released] = update(moved, ReleasedGraphCanvasPointer())
 
-    expect(moved.workspace.graphPanX).toBe(60)
-    expect(moved.workspace.graphPanY).toBe(40)
-    expect(released.workspace.graphPanState._tag).toBe('GraphPanIdle')
+    expect(moved.graphPanX).toBe(60)
+    expect(moved.graphPanY).toBe(40)
+    expect(released.graphPanState._tag).toBe('GraphPanIdle')
     expect(moveCommands).toStrictEqual([])
   })
 
@@ -303,8 +356,8 @@ describe('workflow engine update', () => {
     )
     const [released] = update(moved, ReleasedGraphCanvasPointer())
 
-    expect(released.workspace.selectedItemKind).toBe('Status')
-    expect(released.workspace.selectedItemId).toBe('PENDING_APPROVAL')
+    expect(released.selectedItemKind).toBe('Status')
+    expect(released.selectedItemId).toBe('PENDING_APPROVAL')
   })
 
   test('dragging from an output handle to an input handle creates a transition', () => {
@@ -321,25 +374,17 @@ describe('workflow engine update', () => {
       dragging,
       ReleasedTransitionInput({ statusId: 'REJECTED' }),
     )
-    const transition = nextModel.workspace.workflow.transitions.find(
-      item => item.id === `transition-${model.workspace.nextSequence}`,
+    const transition = nextModel.workflow.transitions.find(
+      item => item.id === `transition-${model.nextSequence}`,
     )
 
-    expect(dragging.workspace.transitionDragState._tag).toBe(
-      'TransitionDragging',
-    )
+    expect(dragging.transitionDragState._tag).toBe('TransitionDragging')
     expect(transition?.fromStatusId).toBe('APPROVED')
     expect(transition?.toStatusId).toBe('REJECTED')
-    expect(nextModel.workspace.selectedTransitionId).toBe(transition?.id)
-    expect(nextModel.workspace.selectedItemKind).toBe(
-      model.workspace.selectedItemKind,
-    )
-    expect(nextModel.workspace.selectedItemId).toBe(
-      model.workspace.selectedItemId,
-    )
-    expect(nextModel.workspace.transitionDragState._tag).toBe(
-      'TransitionDragIdle',
-    )
+    expect(nextModel.selectedTransitionId).toBe(transition?.id)
+    expect(nextModel.selectedItemKind).toBe(model.selectedItemKind)
+    expect(nextModel.selectedItemId).toBe(model.selectedItemId)
+    expect(nextModel.transitionDragState._tag).toBe('TransitionDragIdle')
     expect(commands.length).toBe(1)
   })
 
@@ -365,17 +410,35 @@ describe('workflow engine update', () => {
       ReleasedTransitionInput({ statusId: 'DRAFT' }),
     )
 
-    expect(fromFinal.workspace.transitionDragState._tag).toBe(
-      'TransitionDragIdle',
-    )
+    expect(fromFinal.transitionDragState._tag).toBe('TransitionDragIdle')
     expect(finalCommands).toStrictEqual([])
-    expect(toDraft.workspace.transitionDragState._tag).toBe(
-      'TransitionDragIdle',
-    )
-    expect(toDraft.workspace.workflow.transitions.length).toBe(
-      defaultModel().workspace.workflow.transitions.length,
+    expect(toDraft.transitionDragState._tag).toBe('TransitionDragIdle')
+    expect(toDraft.workflow.transitions.length).toBe(
+      defaultModel().workflow.transitions.length,
     )
     expect(draftCommands).toStrictEqual([])
+  })
+
+  test('transition drag blocks duplicate edges', () => {
+    const model = defaultModel()
+    const [dragging] = update(
+      model,
+      PressedTransitionOutput({
+        statusId: 'DRAFT',
+        screenX: 100,
+        screenY: 100,
+      }),
+    )
+    const [nextModel, commands] = update(
+      dragging,
+      ReleasedTransitionInput({ statusId: 'PENDING_APPROVAL' }),
+    )
+
+    expect(nextModel.transitionDragState._tag).toBe('TransitionDragIdle')
+    expect(nextModel.workflow.transitions.length).toBe(
+      model.workflow.transitions.length,
+    )
+    expect(commands).toStrictEqual([])
   })
 
   test('zoom controls change and reset viewport scale', () => {
@@ -383,15 +446,15 @@ describe('workflow engine update', () => {
     const [zoomedOut] = update(zoomedIn, ClickedZoomedGraphOut())
     const [reset] = update(zoomedOut, ClickedResetGraphViewport())
 
-    expect(zoomedIn.workspace.graphZoom).toBeGreaterThan(1)
-    expect(zoomedOut.workspace.graphZoom).toBeCloseTo(1)
-    expect(reset.workspace.graphZoom).toBe(1)
-    expect(reset.workspace.graphPanX).toBe(0)
-    expect(reset.workspace.graphPanY).toBe(0)
+    expect(zoomedIn.graphZoom).toBeGreaterThan(1)
+    expect(zoomedOut.graphZoom).toBeCloseTo(1)
+    expect(reset.graphZoom).toBe(1)
+    expect(reset.graphPanX).toBe(0)
+    expect(reset.graphPanY).toBe(0)
   })
 
   test('balances two outgoing graph nodes around the source row', () => {
-    const layout = Graph.layout(defaultModel().workspace.workflow)
+    const layout = Graph.layout(defaultModel().workflow)
     const draft = layout.nodes.find(node => node.status.id === 'DRAFT')
     const pending = layout.nodes.find(
       node => node.status.id === 'PENDING_APPROVAL',
@@ -438,6 +501,84 @@ describe('workflow engine update', () => {
     expect(upperDelta).toBeLessThan(240)
   })
 
+  test('keeps single-output graph chains lined up', () => {
+    const workflow: Workflow.WorkflowDefinition = {
+      id: 'single-output-chain-flow',
+      name: 'Single output chain flow',
+      documentType: 'Test',
+      version: 1,
+      initialStatusId: 'SOURCE',
+      statuses: [
+        graphStatus('SOURCE', 'Source', 'draft'),
+        graphStatus('MIDDLE', 'Middle'),
+        graphStatus('TARGET', 'Target', 'final'),
+      ],
+      transitions: [
+        graphTransition('source-to-middle', 'SOURCE', 'MIDDLE'),
+        graphTransition('middle-to-target', 'MIDDLE', 'TARGET'),
+      ],
+    }
+    const layout = Graph.layout(workflow)
+    const source = layout.nodes.find(node => node.status.id === 'SOURCE')
+    const middle = layout.nodes.find(node => node.status.id === 'MIDDLE')
+    const target = layout.nodes.find(node => node.status.id === 'TARGET')
+
+    expect(nodeCenterY(middle)).toBeCloseTo(nodeCenterY(source))
+    expect(nodeCenterY(target)).toBeCloseTo(nodeCenterY(source))
+  })
+
+  test('places a node in the column after its left-most input', () => {
+    const workflow: Workflow.WorkflowDefinition = {
+      id: 'left-most-input-column-flow',
+      name: 'Left-most input column flow',
+      documentType: 'Test',
+      version: 1,
+      initialStatusId: 'SOURCE',
+      statuses: [
+        graphStatus('SOURCE', 'Source', 'draft'),
+        graphStatus('BLOCKER', 'Blocker'),
+        graphStatus('TARGET', 'Target'),
+      ],
+      transitions: [
+        graphTransition('source-to-blocker', 'SOURCE', 'BLOCKER'),
+        graphTransition('blocker-to-target', 'BLOCKER', 'TARGET'),
+        graphTransition('source-to-target', 'SOURCE', 'TARGET'),
+      ],
+    }
+    const layout = Graph.layout(workflow)
+    const blocker = layout.nodes.find(node => node.status.id === 'BLOCKER')
+    const target = layout.nodes.find(node => node.status.id === 'TARGET')
+
+    expect(target?.column).toBe(1)
+    expect(target?.column).toBe(blocker?.column)
+  })
+
+  test('ignores back edges when assigning graph columns', () => {
+    const workflow: Workflow.WorkflowDefinition = {
+      id: 'back-edge-column-flow',
+      name: 'Back edge column flow',
+      documentType: 'Test',
+      version: 1,
+      initialStatusId: 'SOURCE',
+      statuses: [
+        graphStatus('SOURCE', 'Source', 'draft'),
+        graphStatus('MIDDLE', 'Middle'),
+        graphStatus('TARGET', 'Target'),
+      ],
+      transitions: [
+        graphTransition('source-to-middle', 'SOURCE', 'MIDDLE'),
+        graphTransition('middle-to-target', 'MIDDLE', 'TARGET'),
+        graphTransition('target-to-middle', 'TARGET', 'MIDDLE'),
+      ],
+    }
+    const layout = Graph.layout(workflow)
+    const middle = layout.nodes.find(node => node.status.id === 'MIDDLE')
+    const target = layout.nodes.find(node => node.status.id === 'TARGET')
+
+    expect(middle?.column).toBe(1)
+    expect(target?.column).toBe(2)
+  })
+
   test('normalizes balanced rows into the graph canvas', () => {
     const workflow: Workflow.WorkflowDefinition = {
       id: 'balanced-four-output-flow',
@@ -466,14 +607,14 @@ describe('workflow engine update', () => {
   })
 
   test('uses bezier graph edge paths', () => {
-    const layout = Graph.layout(defaultModel().workspace.workflow)
+    const layout = Graph.layout(defaultModel().workflow)
 
     expect(layout.edges.every(edge => /C/.test(edge.path))).toBe(true)
     expect(layout.edges.every(edge => !/[HVQ]/.test(edge.path))).toBe(true)
   })
 
   test('routes graph edge curves outside node bodies', () => {
-    const layout = Graph.layout(defaultModel().workspace.workflow)
+    const layout = Graph.layout(defaultModel().workflow)
     const intersections = layout.edges.flatMap(edge =>
       pathSamplePoints(edge.path).flatMap(point =>
         layout.nodes
@@ -591,18 +732,18 @@ describe('workflow engine update', () => {
       ClickedDeletedStatus({ statusId: 'PENDING_APPROVAL' }),
     )
 
+    expect(nextModel.workflow.statuses.map(status => status.id)).not.toContain(
+      'PENDING_APPROVAL',
+    )
     expect(
-      nextModel.workspace.workflow.statuses.map(status => status.id),
-    ).not.toContain('PENDING_APPROVAL')
-    expect(
-      nextModel.workspace.workflow.transitions.some(
+      nextModel.workflow.transitions.some(
         transition =>
           transition.fromStatusId === 'PENDING_APPROVAL' ||
           transition.toStatusId === 'PENDING_APPROVAL',
       ),
     ).toBe(false)
     expect(documentStatus(nextModel)).toBe('DRAFT')
-    expect(nextModel.workspace.selectedItemKind).toBe('Workflow')
+    expect(nextModel.selectedItemKind).toBe('Workflow')
     expect(commands.length).toBe(1)
   })
 
@@ -612,10 +753,10 @@ describe('workflow engine update', () => {
       ClickedDeletedStatus({ statusId: 'DRAFT' }),
     )
 
-    expect(
-      nextModel.workspace.workflow.statuses.map(status => status.id),
-    ).toContain('DRAFT')
-    expect(nextModel.workspace.banner).toBe('Initial status cannot be deleted')
+    expect(nextModel.workflow.statuses.map(status => status.id)).toContain(
+      'DRAFT',
+    )
+    expect(nextModel.banner).toBe('Initial status cannot be deleted')
     expect(commands).toStrictEqual([])
   })
 
@@ -625,26 +766,20 @@ describe('workflow engine update', () => {
       id: 'manager-back-to-draft',
       fromStatusId: 'PENDING_APPROVAL',
       toStatusId: 'DRAFT',
-      label: 'Manager returns to draft',
       allowedRoles: ['OrderModerator'],
-      requiresComment: false,
-      sortOrder: 'test-1',
       effects: [],
     }
     const financeReturnTransition: Workflow.Transition = {
       id: 'finance-back-to-draft',
       fromStatusId: 'APPROVED',
       toStatusId: 'DRAFT',
-      label: 'Finance returns to draft',
       allowedRoles: ['OrderModeratorLimited'],
-      requiresComment: false,
-      sortOrder: 'test-2',
       effects: [],
     }
     const workflow = {
-      ...model.workspace.workflow,
+      ...model.workflow,
       transitions: [
-        ...model.workspace.workflow.transitions,
+        ...model.workflow.transitions,
         managerReturnTransition,
         financeReturnTransition,
       ],

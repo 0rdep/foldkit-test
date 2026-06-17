@@ -1,3 +1,4 @@
+import { Disclosure } from '@foldkit/ui'
 import { Schema as S } from 'effect'
 import { m } from 'foldkit/message'
 
@@ -6,29 +7,18 @@ import * as WorkspaceMessage from './page/workspace/message'
 export {
   ClickedAppliedDefaultFlow,
   ClickedAddedStatus,
-  ClickedAddedTransition,
-  ClickedAddedTransitionEffect,
+  ClickedClosedGraphContextMenu,
   ClickedDeletedStatus,
   ClickedDeletedTransition,
-  ClickedClosedGraphContextMenu,
-  ClickedRemovedTransitionEffect,
-  ClickedRequestedTransition,
-  ClickedRevertedFlowVersion,
-  ClickedResetGraphViewport,
-  ClickedResetWorkspace,
   ClickedLoadedRemoteFlowDefinitions,
+  ClickedMovedTransitionEarlier,
+  ClickedMovedTransitionLater,
   ClickedPublishedRemoteFlow,
   ClickedSavedRemoteFlowDraft,
-  ClickedSavedPreviewLocal,
   ClickedSelectedWorkflow,
-  ClickedToggledStatusActionRole,
   ClickedToggledStatusActionDisclosure,
-  ClickedToggledActionMenu,
-  ClickedZoomedGraphIn,
-  ClickedZoomedGraphOut,
-  ClickedUndidFlowChanges,
-  CompletedSaveWorkspace,
-  FailedLoadCompanies,
+  ClickedToggledStatusActionRole,
+  ClickedToggledTransitionRole,
   MovedGraphCanvasPointer,
   PressedGraphCanvas,
   PressedGraphCanvasContextMenu,
@@ -37,28 +27,64 @@ export {
   PressedTransitionOutput,
   ReleasedGraphCanvasPointer,
   ReleasedTransitionInput,
-  SelectedActor,
-  SelectedDocument,
-  SelectedDocumentStatus,
   SelectedStatus,
   SelectedStatusType,
-  SelectedTransition,
   SelectedTransitionFromStatus,
   SelectedTransitionToStatus,
   SuppressedNativeGraphContextMenu,
-  UpdatedDocumentAmount,
+  UpdatedFlowDocumentType,
+  UpdatedStatusId,
   UpdatedStatusName,
   UpdatedTargetCompanyId,
-  UpdatedTransitionLabel,
-  FailedPublishFlow,
-  SucceededLoadCompanies,
-  SucceededLoadFlowHistory,
-  SucceededPublishFlow,
+  UpdatedTransitionAutomationOnly,
 } from './page/workspace/message'
 
 export const GotWorkspaceMessage = m('GotWorkspaceMessage', {
   message: WorkspaceMessage.Message,
 })
+export const ScrolledCanvas = m('ScrolledCanvas', {
+  deltaY: S.Number,
+  x: S.Number,
+  y: S.Number,
+})
+export const MovedGraphClientPointer = m('MovedGraphClientPointer', {
+  x: S.Number,
+  y: S.Number,
+})
+export const ReleasedGraphClientPointer = m('ReleasedGraphClientPointer', {
+  x: S.Number,
+  y: S.Number,
+})
+export const ClickedHidLeftPanel = m('ClickedHidLeftPanel')
+export const ClickedOpenedLeftPanel = m('ClickedOpenedLeftPanel')
+export const ClickedToggledNodeTransitionDisclosure = m(
+  'ClickedToggledNodeTransitionDisclosure',
+  { transitionId: S.String },
+)
+export const GotFlowHistoryDisclosureMessage = m(
+  'GotFlowHistoryDisclosureMessage',
+  { message: Disclosure.Message },
+)
+export const GotNodeTransitionsDisclosureMessage = m(
+  'GotNodeTransitionsDisclosureMessage',
+  { message: Disclosure.Message },
+)
+export const GotEditableActionsDisclosureMessage = m(
+  'GotEditableActionsDisclosureMessage',
+  { message: Disclosure.Message },
+)
 
-export const Message = S.Union([WorkspaceMessage.Message, GotWorkspaceMessage])
+export const Message = S.Union([
+  WorkspaceMessage.Message,
+  GotWorkspaceMessage,
+  ScrolledCanvas,
+  MovedGraphClientPointer,
+  ReleasedGraphClientPointer,
+  ClickedHidLeftPanel,
+  ClickedOpenedLeftPanel,
+  ClickedToggledNodeTransitionDisclosure,
+  GotFlowHistoryDisclosureMessage,
+  GotNodeTransitionsDisclosureMessage,
+  GotEditableActionsDisclosureMessage,
+])
 export type Message = typeof Message.Type

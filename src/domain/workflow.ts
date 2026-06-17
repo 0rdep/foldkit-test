@@ -60,14 +60,20 @@ export type EffectDefinition = typeof EffectDefinition.Type
 export const Transition = S.Struct({
   id: S.String,
   fromStatusId: S.String,
-  toStatusId: S.String,
-  label: S.String,
-  allowedRoles: S.Array(S.String),
-  requiresComment: S.Boolean,
-  sortOrder: S.String,
-  effects: S.Array(EffectDefinition),
+	toStatusId: S.String,
+	allowedRoles: S.Array(S.String),
+	automationOnly: S.optional(S.Boolean),
+	effects: S.Array(EffectDefinition),
 })
 export type Transition = typeof Transition.Type
+
+export const DeliveryAutomation = S.Struct({
+	enabled: S.Boolean,
+	fullyDeliveredStatusId: S.String,
+	partiallyDeliveredStatusId: S.String,
+	partiallyDeliveredCompletionRequiredStatusId: S.String,
+})
+export type DeliveryAutomation = typeof DeliveryAutomation.Type
 
 export const WorkflowDefinition = S.Struct({
   id: S.String,
@@ -76,8 +82,9 @@ export const WorkflowDefinition = S.Struct({
   version: S.Number,
   state: S.optional(FlowDefinitionState),
   initialStatusId: S.String,
-  statuses: S.Array(Status),
-  transitions: S.Array(Transition),
+	statuses: S.Array(Status),
+	transitions: S.Array(Transition),
+	deliveryAutomation: S.optional(DeliveryAutomation),
 })
 export type WorkflowDefinition = typeof WorkflowDefinition.Type
 
@@ -224,6 +231,15 @@ export const findTransition = (
     Array.findFirst(transition => transition.id === transitionId),
   )
 
+export const transitionLabel = (
+  workflow: WorkflowDefinition,
+  transition: Transition,
+): string =>
+  Option.match(findStatus(workflow, transition.toStatusId), {
+    onNone: () => transition.toStatusId,
+    onSome: status => status.name,
+  })
+
 export const findActor = (
   actors: ReadonlyArray<Actor>,
   actorId: string,
@@ -343,16 +359,12 @@ export const runtimeState = (
         return []
       }
 
-      const maybeToStatus = findStatus(workflow, transition.toStatusId)
-      const toStatusName = Option.match(maybeToStatus, {
-        onNone: () => transition.toStatusId,
-        onSome: status => status.name,
-      })
+      const toStatusName = transitionLabel(workflow, transition)
 
       return [
         {
           id: transition.id,
-          label: transition.label,
+          label: toStatusName,
           toStatusName,
         },
       ]
@@ -366,7 +378,7 @@ export const runtimeState = (
         return [
           {
             id: transition.id,
-            label: transition.label,
+            label: transitionLabel(workflow, transition),
             reason: `Requires one of: ${Array.join(
               Array.map(transition.allowedRoles, roleLabel),
               ', ',
@@ -410,25 +422,27 @@ const effectEntries = (
   }))
 
 const completeTransition = (
+  workflow: WorkflowDefinition,
   document: DocumentInstance,
   transition: Transition,
   actor: Actor,
   eventId: string,
 ): TransitionResult => {
   const effects = effectEntries(transition, eventId)
+  const label = transitionLabel(workflow, transition)
   const nextDocument = appendEvent(
     evo(document, {
       currentStatusId: () => transition.toStatusId,
       effectLog: effectLog => [...effectLog, ...effects],
     }),
     eventId,
-    `${actor.name} completed ${transition.label}`,
+    `${actor.name} completed ${label}`,
   )
 
   return {
     document: nextDocument,
     result: 'transitioned',
-    message: `${transition.label} completed`,
+    message: `${label} completed`,
     emittedEffects: effects,
   }
 }
@@ -466,7 +480,7 @@ export const requestTransition = (
         }
       }
 
-      return completeTransition(document, transition, actor, idPrefix)
+      return completeTransition(workflow, document, transition, actor, idPrefix)
     },
   })
 
@@ -513,15 +527,21 @@ export const validateWorkflow = (
     workflow.transitions,
     Array.flatMap(transition => [
       ...Array.match(transition.allowedRoles, {
-        onEmpty: () => [`${transition.label} has no execution roles`],
+        onEmpty: () => [
+          `${transitionLabel(workflow, transition)} has no execution roles`,
+        ],
         onNonEmpty: () => [],
       }),
       ...Option.match(findStatus(workflow, transition.fromStatusId), {
-        onNone: () => [`${transition.label} has a missing source status`],
+        onNone: () => [
+          `${transitionLabel(workflow, transition)} has a missing source status`,
+        ],
         onSome: () => [],
       }),
       ...Option.match(findStatus(workflow, transition.toStatusId), {
-        onNone: () => [`${transition.label} has a missing target status`],
+        onNone: () => [
+          `${transitionLabel(workflow, transition)} has a missing target status`,
+        ],
         onSome: () => [],
       }),
     ]),

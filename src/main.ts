@@ -1,15 +1,16 @@
 import { BrowserKeyValueStore } from '@effect/platform-browser'
+import { Disclosure } from '@foldkit/ui'
 import { Effect, Option, Schema as S } from 'effect'
 import { KeyValueStore } from 'effect/unstable/persistence'
 import { Runtime } from 'foldkit'
 
 import { STORAGE_KEY } from './constant'
 import { Message } from './message'
-import { Model } from './model'
+import { LeftPanelOpen, Model } from './model'
 import { Workspace } from './page'
 import { LoadCompanies, LoadFlowDefinitions } from './page/workspace/command'
 import { subscriptions } from './subscription'
-import { resetModel, update } from './update'
+import { update } from './update'
 import { view } from './view'
 
 // FLAGS
@@ -46,13 +47,30 @@ const targetCompanyIdVariable = (value: string): string | undefined => {
 export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => {
   const workspace = Workspace.init(flags.maybeSavedWorkspace)
   const companyId = targetCompanyIdVariable(workspace.targetCompanyId)
+  const flowHistoryDisclosure = Disclosure.init({
+    id: 'flow-history-disclosure',
+  })
+  const nodeTransitionsDisclosure = Disclosure.init({
+    id: 'node-transitions-disclosure',
+  })
+  const editableActionsDisclosure = Disclosure.init({
+    id: 'editable-actions-disclosure',
+  })
+  const model = {
+    workspace,
+    leftPanelState: LeftPanelOpen(),
+    flowHistoryDisclosure,
+    nodeTransitionsDisclosure,
+    editableActionsDisclosure,
+    openNodeTransitionIds: [],
+  }
 
   if (companyId === undefined) {
-    return [{ workspace }, [LoadCompanies()]]
+    return [model, [LoadCompanies()]]
   }
 
   return [
-    { workspace },
+    model,
     [
       LoadCompanies(),
       LoadFlowDefinitions({
@@ -63,6 +81,6 @@ export const init: Runtime.ApplicationInit<Model, Message, Flags> = flags => {
   ]
 }
 
-export const defaultModel = (): Model => resetModel()
+export const defaultModel = (): Workspace.Model.Model => Workspace.resetModel()
 
 export { Message, Model, subscriptions, update, view }

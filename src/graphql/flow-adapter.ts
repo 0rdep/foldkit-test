@@ -52,12 +52,11 @@ export const toWorkflowDefinition = (
     id: transition.id,
     fromStatusId: transition.fromStatusId,
     toStatusId: transition.toStatusId,
-    label: transition.label,
     allowedRoles: [...transition.allowedRoles],
-    requiresComment: transition.requiresComment ?? false,
-    sortOrder: transition.sortOrder,
+    automationOnly: transition.automationOnly ?? false,
     effects: [],
   })),
+  deliveryAutomation: definition.deliveryAutomation ?? undefined,
 })
 
 export const toUpdateFlowDraftInput = (
@@ -76,12 +75,11 @@ export const toUpdateFlowDraftInput = (
   transitions: workflow.transitions.map(
     (transition): FlowTransitionDefinitionInput => ({
       id: transition.id,
-      label: transition.label,
       fromStatusId: transition.fromStatusId,
       toStatusId: transition.toStatusId,
       allowedRoles: transition.allowedRoles,
-      requiresComment: transition.requiresComment,
-      sortOrder: transition.sortOrder,
+      automationOnly: transition.automationOnly ?? false,
     }),
   ),
+  deliveryAutomation: workflow.deliveryAutomation ?? null,
 })

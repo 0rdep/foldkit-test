@@ -1,11 +1,13 @@
 import { Scene } from 'foldkit'
 import { describe, test } from 'vitest'
 
-import { defaultModel } from './main'
-import { CompletedSaveWorkspace } from './message'
+import { Workspace } from './page'
 import { SaveWorkspace } from './page/workspace/command'
-import { update } from './update'
-import { view } from './view/index'
+import { CompletedSaveWorkspace } from './page/workspace/message'
+
+const defaultModel = Workspace.resetModel
+const update = Workspace.update
+const view = Workspace.view
 
 describe('workflow scene', () => {
   test('renders embedded workflow canvas controls', () => {
@@ -44,7 +46,9 @@ describe('workflow scene', () => {
         Scene.role('button', { name: 'Delete status' }),
       ).toBeAbsent(),
       Scene.expect(
-        Scene.role('button', { name: 'Create transition from Pending Approval' }),
+        Scene.role('button', {
+          name: 'Create transition from Pending Approval',
+        }),
       ).toExist(),
     )
   })

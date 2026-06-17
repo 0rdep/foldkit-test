@@ -91,11 +91,6 @@ type SearchGrid = Readonly<{
   priorSegments: ReadonlyArray<Segment>
 }>
 
-type PoppedSearchState = Readonly<{
-  state: SearchState
-  rest: ReadonlyArray<SearchState>
-}>
-
 type RoutedEdge = Readonly<{
   transition: Workflow.Transition
   from: GraphNode
@@ -119,41 +114,72 @@ type RoundedPathState = Readonly<{
 const cornerRadius = 56
 const cornerHandleRatio = 0.55
 
-const incomingTransitions = (
+const columnEntries = (
   workflow: Workflow.WorkflowDefinition,
-  statusId: string,
-): ReadonlyArray<Workflow.Transition> =>
-  Array.filter(
-    workflow.transitions,
-    transition => transition.toStatusId === statusId,
-  )
+): ReadonlyArray<DepthEntry> => {
+  const statusIds = new Set(Array.map(workflow.statuses, status => status.id))
+  const initialColumns = new Map<string, number>()
 
-const depthForStatus = (
-  workflow: Workflow.WorkflowDefinition,
-  statusId: string,
-  visited: ReadonlyArray<string>,
-): number => {
-  if (statusId === workflow.initialStatusId) {
-    return 0
+  if (statusIds.has(workflow.initialStatusId)) {
+    initialColumns.set(workflow.initialStatusId, 0)
   }
 
-  if (Array.contains(visited, statusId)) {
-    return -1
+  const columnsChanged = (
+    left: ReadonlyMap<string, number>,
+    right: ReadonlyMap<string, number>,
+  ): boolean =>
+    Array.some(
+      workflow.statuses,
+      status => left.get(status.id) !== right.get(status.id),
+    )
+
+  const buildColumns = (
+    columns: ReadonlyMap<string, number>,
+    remainingPasses: number,
+  ): ReadonlyMap<string, number> => {
+    if (remainingPasses <= 0) {
+      return columns
+    }
+
+    const nextColumns = workflow.transitions.reduce<Map<string, number>>(
+      (currentColumns, transition) => {
+        if (
+          !statusIds.has(transition.fromStatusId) ||
+          !statusIds.has(transition.toStatusId) ||
+          transition.toStatusId === workflow.initialStatusId
+        ) {
+          return currentColumns
+        }
+
+        const fromColumn = currentColumns.get(transition.fromStatusId)
+
+        if (fromColumn === undefined) {
+          return currentColumns
+        }
+
+        const column = fromColumn + 1
+        const currentColumn = currentColumns.get(transition.toStatusId)
+
+        if (currentColumn === undefined || column < currentColumn) {
+          currentColumns.set(transition.toStatusId, column)
+        }
+
+        return currentColumns
+      },
+      new Map(columns),
+    )
+
+    return columnsChanged(columns, nextColumns)
+      ? buildColumns(nextColumns, remainingPasses - 1)
+      : nextColumns
   }
 
-  const incomingDepths = pipe(
-    incomingTransitions(workflow, statusId),
-    Array.map(transition =>
-      depthForStatus(workflow, transition.fromStatusId, [...visited, statusId]),
-    ),
-    Array.filter(depth => depth >= 0),
-  )
+  const columns = buildColumns(initialColumns, workflow.statuses.length)
 
-  if (Array.isReadonlyArrayEmpty(incomingDepths)) {
-    return -1
-  }
-
-  return Math.min(...incomingDepths) + 1
+  return Array.map(workflow.statuses, status => ({
+    statusId: status.id,
+    depth: columns.get(status.id) ?? -1,
+  }))
 }
 
 const maxDepth = (entries: ReadonlyArray<DepthEntry>): number => {
@@ -301,8 +327,50 @@ const resolvedRows = (
   depths: ReadonlyArray<DepthEntry>,
   preferredRows: ReadonlyArray<RowEntry>,
   maxReachableDepth: number,
-): ReadonlyArray<RowEntry> =>
-  workflow.statuses.flatMap(status => {
+): ReadonlyArray<RowEntry> => {
+  const canUseRow = (
+    candidate: number,
+    occupiedRows: ReadonlyArray<number>,
+  ): boolean => occupiedRows.every(row => Math.abs(candidate - row) >= 1)
+
+  const nearestAvailableRow = (
+    row: number,
+    occupiedRows: ReadonlyArray<number>,
+  ): number => {
+    if (canUseRow(row, occupiedRows)) {
+      return row
+    }
+
+    const candidates = Array.flatMap(
+      Array.makeBy(occupiedRows.length + 2, index => index + 1),
+      offset => [row + offset, row - offset],
+    )
+
+    return Option.getOrElse(
+      Array.findFirst(candidates, candidate =>
+        canUseRow(candidate, occupiedRows),
+      ),
+      () => row + occupiedRows.length + 1,
+    )
+  }
+
+  const alignmentPriority = (statusId: string): number =>
+    Array.some(
+      directIncomingTransitions(workflow, depths, statusId),
+      transition => {
+        const siblings = forwardOutgoingTransitions(
+          workflow,
+          depths,
+          transition.fromStatusId,
+        )
+
+        return siblings.length === 1
+      },
+    )
+      ? 1
+      : 0
+
+  return workflow.statuses.flatMap(status => {
     const depth = depthEntryForStatus(depths, status.id)
     const column = columnForDepth(depth, maxReachableDepth)
     const statusesInColumn = workflow.statuses
@@ -318,16 +386,22 @@ const resolvedRows = (
         row:
           preferredRows.find(entry => entry.statusId === item.id)?.row ??
           fallbackRowForStatus(workflow, depths, item.id, maxReachableDepth),
+        priority: alignmentPriority(item.id),
+        index: workflow.statuses.findIndex(status => status.id === item.id),
       }))
-      .sort((left, right) => left.row - right.row)
+      .sort(
+        (left, right) =>
+          right.priority - left.priority ||
+          left.row - right.row ||
+          left.index - right.index,
+      )
 
     const resolvedInColumn = statusesInColumn.reduce<ReadonlyArray<RowEntry>>(
       (entries, entry) => {
-        const previous = entries[entries.length - 1]
-        const row =
-          previous === undefined
-            ? entry.row
-            : Math.max(entry.row, previous.row + 1)
+        const row = nearestAvailableRow(
+          entry.row,
+          Array.map(entries, current => current.row),
+        )
         return [...entries, { statusId: entry.statusId, row }]
       },
       [],
@@ -335,6 +409,7 @@ const resolvedRows = (
 
     return resolvedInColumn.filter(entry => entry.statusId === status.id)
   })
+}
 
 const normalizedRows = (
   rows: ReadonlyArray<RowEntry>,
@@ -350,15 +425,6 @@ const normalizedRows = (
     row: entry.row - minRow,
   }))
 }
-
-const nodeForStatus = (
-  nodes: ReadonlyArray<GraphNode>,
-  statusId: string,
-): Option.Option<GraphNode> =>
-  pipe(
-    nodes,
-    Array.findFirst(node => node.status.id === statusId),
-  )
 
 const isBackEdge = (from: GraphNode, to: GraphNode): boolean =>
   to.column <= from.column
@@ -381,7 +447,7 @@ const nodeRect = (node: GraphNode, padding: number): Rect => ({
 const segment = (from: Point, to: Point): Segment => ({ from, to })
 
 const compactPoints = (points: ReadonlyArray<Point>): ReadonlyArray<Point> =>
-  points.reduce<ReadonlyArray<Point>>((compact, p) => {
+  points.reduce<Array<Point>>((compact, p) => {
     const previous = compact[compact.length - 1]
     const beforePrevious = compact[compact.length - 2]
 
@@ -394,9 +460,11 @@ const compactPoints = (points: ReadonlyArray<Point>): ReadonlyArray<Point> =>
       ((beforePrevious.x === previous.x && previous.x === p.x) ||
         (beforePrevious.y === previous.y && previous.y === p.y))
     ) {
-      return [...compact.slice(0, -1), p]
+      compact[compact.length - 1] = p
+      return compact
     }
-    return [...compact, p]
+    compact.push(p)
+    return compact
   }, [])
 
 const segmentsFromPoints = (
@@ -653,7 +721,10 @@ const fallbackAroundNodesRoute = (
   ]
   const clearCandidate = candidates.find(
     candidate =>
-      !routeTouchesNode(visualizedRoutePoints(input, candidate), intermediateNodes),
+      !routeTouchesNode(
+        visualizedRoutePoints(input, candidate),
+        intermediateNodes,
+      ),
   )
 
   return clearCandidate ?? fallbackRoute(start, end)
@@ -949,30 +1020,25 @@ const adjacentCoordinatePoints = (
 }
 
 const popLowestPriority = (
-  states: ReadonlyArray<SearchState>,
-): Option.Option<PoppedSearchState> => {
-  const lowest = states.reduce<
-    Option.Option<Readonly<{ state: SearchState; index: number }>>
-  >(
-    (maybeBest, state, index) =>
-      Option.match(maybeBest, {
-        onNone: () => Option.some({ state, index }),
-        onSome: best =>
-          state.priority < best.state.priority
-            ? Option.some({ state, index })
-            : maybeBest,
-      }),
-    Option.none(),
-  )
+  states: Array<SearchState>,
+): Option.Option<SearchState> => {
+  let bestIndex = -1
+  let bestPriority = Number.POSITIVE_INFINITY
 
-  return Option.match(lowest, {
-    onNone: () => Option.none(),
-    onSome: best =>
-      Option.some({
-        state: best.state,
-        rest: [...states.slice(0, best.index), ...states.slice(best.index + 1)],
-      }),
+  states.forEach((state, index) => {
+    if (state.priority < bestPriority) {
+      bestIndex = index
+      bestPriority = state.priority
+    }
   })
+
+  if (bestIndex < 0) {
+    return Option.none()
+  }
+
+  const state = states.splice(bestIndex, 1)[0]
+
+  return state === undefined ? Option.none() : Option.some(state)
 }
 
 const routeSearch = (
@@ -982,22 +1048,22 @@ const routeSearch = (
   end: Point,
   grid: SearchGrid,
 ): Option.Option<ReadonlyArray<Point>> => {
-  let pending = open
-  let visited = closed
-  let costs = bestCosts
+  const pending: Array<SearchState> = [...open]
+  const visited = new Set(closed)
+  const costs = new Map(bestCosts)
   let remainingIterations =
     grid.xCoordinates.length * grid.yCoordinates.length * 3
 
   while (remainingIterations > 0) {
     remainingIterations -= 1
 
-    const maybePopped = popLowestPriority(pending)
+    const maybeState = popLowestPriority(pending)
 
-    if (Option.isNone(maybePopped)) {
+    if (Option.isNone(maybeState)) {
       return Option.none()
     }
 
-    const { state, rest } = maybePopped.value
+    const state = maybeState.value
     const currentKey = searchStateKey(state)
     const bestCost = costs.get(currentKey)
 
@@ -1005,7 +1071,6 @@ const routeSearch = (
       visited.has(currentKey) ||
       (bestCost !== undefined && state.cost > bestCost)
     ) {
-      pending = rest
       continue
     }
 
@@ -1049,13 +1114,11 @@ const routeSearch = (
         return [nextState]
       },
     )
-    visited = new Set(visited).add(currentKey)
-    costs = nextStates.reduce<ReadonlyMap<string, number>>(
-      (nextCosts, nextState) =>
-        new Map(nextCosts).set(searchStateKey(nextState), nextState.cost),
-      costs,
-    )
-    pending = [...rest, ...nextStates]
+    visited.add(currentKey)
+    nextStates.forEach(nextState => {
+      costs.set(searchStateKey(nextState), nextState.cost)
+      pending.push(nextState)
+    })
   }
 
   return Option.none()
@@ -1127,49 +1190,22 @@ const routeTransitions = (
   inputs: ReadonlyArray<RoutableTransition>,
 ): ReadonlyArray<RoutedEdge> =>
   inputs.reduce<{
-    edges: ReadonlyArray<RoutedEdge>
-    priorSegments: ReadonlyArray<Segment>
+    edges: Array<RoutedEdge>
+    priorSegments: Array<Segment>
   }>(
     (state, input) => {
       const edge = routeTransition(nodes, input, state.priorSegments)
 
+      state.edges.push(edge)
+      state.priorSegments.push(...segmentsFromPoints(edge.points))
+
       return {
-        edges: [...state.edges, edge],
-        priorSegments: [
-          ...state.priorSegments,
-          ...segmentsFromPoints(edge.points),
-        ],
+        edges: state.edges,
+        priorSegments: state.priorSegments,
       }
     },
     { edges: [], priorSegments: [] },
   ).edges
-
-const transitionEndpoints = (
-  nodes: ReadonlyArray<GraphNode>,
-  transition: Workflow.Transition,
-): Option.Option<Readonly<{ from: GraphNode; to: GraphNode }>> =>
-  Option.all({
-    from: nodeForStatus(nodes, transition.fromStatusId),
-    to: nodeForStatus(nodes, transition.toStatusId),
-  })
-
-const backEdgeLaneIndex = (
-  nodes: ReadonlyArray<GraphNode>,
-  transitions: ReadonlyArray<Workflow.Transition>,
-  transition: Workflow.Transition,
-  transitionIndex: number,
-): number =>
-  pipe(
-    transitions.slice(0, transitionIndex),
-    Array.filter(
-      previousTransition =>
-        previousTransition.toStatusId === transition.toStatusId &&
-        pipe(
-          transitionEndpoints(nodes, previousTransition),
-          Option.exists(({ from, to }) => isBackEdge(from, to)),
-        ),
-    ),
-  ).length
 
 const centeredRowOffset = (rowIndex: number, rowCount: number): number =>
   rowIndex - (rowCount - 1) / 2
@@ -1183,10 +1219,7 @@ const maxEdgeX = (edge: GraphEdge): number => {
 }
 
 export const layout = (workflow: Workflow.WorkflowDefinition): GraphLayout => {
-  const depths = Array.map(workflow.statuses, status => ({
-    statusId: status.id,
-    depth: depthForStatus(workflow, status.id, []),
-  }))
+  const depths = columnEntries(workflow)
   const reachableMaxDepth = maxDepth(depths)
   const preferredRows = Array.map(workflow.statuses, status => ({
     statusId: status.id,
@@ -1227,48 +1260,47 @@ export const layout = (workflow: Workflow.WorkflowDefinition): GraphLayout => {
       row,
     }
   })
-
-  const routableTransitions = workflow.transitions.flatMap(
-    (transition, transitionIndex) =>
-      pipe(
-        transitionEndpoints(nodes, transition),
-        Option.match({
-          onNone: () => [],
-          onSome: ({ from, to }) => [
-            {
-              transition,
-              from,
-              to,
-              laneIndex: backEdgeLaneIndex(
-                nodes,
-                workflow.transitions,
-                transition,
-                transitionIndex,
-              ),
-            },
-          ],
-        }),
-      ),
+  const nodeByStatusId = new Map(
+    Array.map(nodes, node => [node.status.id, node] as const),
   )
+  const backEdgeLaneCounts = new Map<string, number>()
+
+  const routableTransitions = workflow.transitions.reduce<
+    Array<RoutableTransition>
+  >((entries, transition) => {
+    const from = nodeByStatusId.get(transition.fromStatusId)
+    const to = nodeByStatusId.get(transition.toStatusId)
+
+    if (from === undefined || to === undefined) {
+      return entries
+    }
+
+    const laneIndex = backEdgeLaneCounts.get(transition.toStatusId) ?? 0
+
+    entries.push({ transition, from, to, laneIndex })
+
+    if (isBackEdge(from, to)) {
+      backEdgeLaneCounts.set(transition.toStatusId, laneIndex + 1)
+    }
+
+    return entries
+  }, [])
   const routedEdges = routeTransitions(nodes, routableTransitions)
   const routed = routedEdges.reduce<{
-    edges: ReadonlyArray<GraphEdge>
-    routePoints: ReadonlyArray<Point>
+    edges: Array<GraphEdge>
+    routePoints: Array<Point>
   }>(
     (state, routedEdge) => {
-      return {
-        edges: [
-          ...state.edges,
-          {
-            transition: routedEdge.transition,
-            from: routedEdge.from,
-            to: routedEdge.to,
-            path: pathFromPoints(routedEdge.points),
-            isBackEdge: routedEdge.isBackEdge,
-          },
-        ],
-        routePoints: [...state.routePoints, ...routedEdge.points],
-      }
+      state.edges.push({
+        transition: routedEdge.transition,
+        from: routedEdge.from,
+        to: routedEdge.to,
+        path: pathFromPoints(routedEdge.points),
+        isBackEdge: routedEdge.isBackEdge,
+      })
+      state.routePoints.push(...routedEdge.points)
+
+      return state
     },
     { edges: [], routePoints: [] },
   )
