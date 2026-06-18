@@ -105,6 +105,7 @@ export const DEFAULT_REQUISITION_FLOW: Workflow.WorkflowDefinition = {
         editableAction('deliveryDate', requisitionFullEditRoles),
         editableAction('items', requisitionFullEditRoles),
         editableAction('attachments', requisitionWriteRoles),
+        editableAction('createOrder', requisitionWriteRoles),
         requisitionDuplicateAction,
       ],
     },

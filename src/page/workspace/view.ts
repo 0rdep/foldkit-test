@@ -1570,6 +1570,9 @@ const statusEditableActionsSection = (
   status: Workflow.Status,
 ): Html => {
   const h = html<Message>()
+  const editableActions = Workflow.editableActionsForDocumentType(
+    model.workflow.documentType,
+  )
 
   return h.div(
     [h.Class('mt-5')],
@@ -1577,7 +1580,7 @@ const statusEditableActionsSection = (
       h.h3([h.Class(headingClass)], ['Editable actions']),
       h.div(
         [h.Class('mt-3 grid gap-2')],
-        Array.map(Workflow.editableActions, action =>
+        Array.map(editableActions, action =>
           editableActionDisclosureRow(model, status, action),
         ),
       ),

@@ -1732,6 +1732,9 @@ const editableActionsSection = (
   const disclosure =
     model.editableActionsDisclosure ??
     Disclosure.init({ id: 'editable-actions-disclosure' })
+  const editableActions = Workflow.editableActionsForDocumentType(
+    model.workspace.workflow.documentType,
+  )
 
   return h.submodel({
     slotId: 'editable-actions-disclosure',
@@ -1755,7 +1758,7 @@ const editableActionsSection = (
                           'rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-400',
                         ),
                       ],
-                      [`${Workflow.editableActions.length}`],
+                      [`${editableActions.length}`],
                     ),
                     chevronIcon(disclosure.isOpen),
                   ],
@@ -1765,7 +1768,7 @@ const editableActionsSection = (
             disclosure.isOpen
               ? h.div(
                   [...attributes.panel, h.Class('space-y-2')],
-                  Array.map(Workflow.editableActions, action =>
+                  Array.map(editableActions, action =>
                     editableActionDisclosureRow(model, status, action),
                   ),
                 )

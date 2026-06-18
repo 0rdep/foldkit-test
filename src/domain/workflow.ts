@@ -20,6 +20,7 @@ export const EditableAction = S.Literals([
   'supplier',
   'subCompany',
   'shipments',
+  'createOrder',
   'delete',
   'duplicate',
 ])
@@ -161,9 +162,41 @@ export const editableActions: ReadonlyArray<EditableAction> = [
   'supplier',
   'subCompany',
   'shipments',
+  'createOrder',
   'delete',
   'duplicate',
 ]
+
+export const requisitionEditableActions: ReadonlyArray<EditableAction> = [
+  'note',
+  'deliveryDate',
+  'items',
+  'discount',
+  'attachments',
+  'createOrder',
+  'delete',
+  'duplicate',
+]
+
+export const orderEditableActions: ReadonlyArray<EditableAction> = [
+  'note',
+  'deliveryDate',
+  'items',
+  'discount',
+  'attachments',
+  'supplier',
+  'subCompany',
+  'shipments',
+  'delete',
+  'duplicate',
+]
+
+export const editableActionsForDocumentType = (
+  documentType: string,
+): ReadonlyArray<EditableAction> =>
+  String.toLowerCase(documentType) === 'order'
+    ? orderEditableActions
+    : requisitionEditableActions
 
 const requisitionWriteRoles = [
   'SystemAdmin',
@@ -312,6 +345,9 @@ export const editableActionLabel = (action: EditableAction): string => {
   }
   if (action === 'shipments') {
     return 'Shipments'
+  }
+  if (action === 'createOrder') {
+    return 'Create order'
   }
   if (action === 'delete') {
     return 'Delete'

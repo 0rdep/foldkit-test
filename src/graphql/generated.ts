@@ -166,6 +166,7 @@ export type FlowDocumentType =
 
 export type FlowEditableAction =
   | 'attachments'
+  | 'createOrder'
   | 'delete'
   | 'deliveryDate'
   | 'discount'
