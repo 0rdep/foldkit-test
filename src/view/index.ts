@@ -43,6 +43,7 @@ import {
   ReleasedGraphClientPointer,
   ScrolledCanvas,
   SelectedDeliveryAutomationStatus,
+  SelectedTransitionAutomationType,
   SelectedStatus,
   SelectedStatusType,
   SubmittedWorkflowImportJson,
@@ -90,6 +91,30 @@ const transitionRoleIds: ReadonlyArray<string> = [
   'CatalogManager',
   'ClientUser',
 ]
+
+const transitionAutomationTypes: ReadonlyArray<Workflow.AutomationType> = [
+  'REQUISITION_ALL_ITEMS_LINKED',
+  'REQUISITION_ITEM_UNLINKED',
+  'ORDER_DELIVERY_FULLY_DELIVERED',
+  'ORDER_DELIVERY_PARTIALLY_DELIVERED',
+  'ORDER_DELIVERY_PARTIALLY_DELIVERED_COMPLETION_REQUIRED',
+  'ORDER_DELIVERY_REOPENED',
+]
+
+const transitionAutomationTypeLabel = (
+  automationType: Workflow.AutomationType,
+): string =>
+  automationType
+    .toLowerCase()
+    .split('_')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+
+const transitionAutomationTypeFromValue = (
+  value: string,
+): Workflow.AutomationType =>
+  transitionAutomationTypes.find(automationType => automationType === value) ??
+  'ORDER_DELIVERY_FULLY_DELIVERED'
 
 type Point = Readonly<{ x: number; y: number }>
 type CubicSegment = Readonly<{
@@ -2227,6 +2252,48 @@ const transitionAutomationToggle = (transition: Workflow.Transition): Html => {
   )
 }
 
+const transitionAutomationTypeSelect = (
+  transition: Workflow.Transition,
+): Html => {
+  const h = html<Message>()
+
+  if (transition.automationOnly !== true) {
+    return h.empty
+  }
+
+  const value = transition.automationType ?? 'ORDER_DELIVERY_FULLY_DELIVERED'
+
+  return h.label(
+    [h.Class('block rounded-xl border border-slate-800 bg-slate-950/70 p-3')],
+    [
+      h.div(
+        [h.Class('text-xs font-medium uppercase tracking-wide text-slate-500')],
+        ['Automation type'],
+      ),
+      h.select(
+        [
+          h.Value(value),
+          h.OnChange(value =>
+            SelectedTransitionAutomationType({
+              transitionId: transition.id,
+              automationType: transitionAutomationTypeFromValue(value),
+            }),
+          ),
+          h.Class(
+            'mt-2 w-full cursor-pointer rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-100 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30',
+          ),
+        ],
+        Array.map(transitionAutomationTypes, automationType =>
+          h.option(
+            [h.Value(automationType), h.Selected(automationType === value)],
+            [transitionAutomationTypeLabel(automationType)],
+          ),
+        ),
+      ),
+    ],
+  )
+}
+
 const transitionEditor = (
   model: Model,
   transition: Workflow.Transition,
@@ -2306,6 +2373,7 @@ const transitionEditor = (
                   [
                     transitionOrderControls(model, transition),
                     transitionAutomationToggle(transition),
+                    transitionAutomationTypeSelect(transition),
                     h.div(
                       [
                         h.Class(

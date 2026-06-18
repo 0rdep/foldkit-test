@@ -372,6 +372,23 @@ const setTransitionAutomationOnly = (
     toStatusId: transition.toStatusId,
     allowedRoles: value ? [] : transition.allowedRoles,
     automationOnly: value,
+    automationType: value
+      ? (transition.automationType ?? 'ORDER_DELIVERY_FULLY_DELIVERED')
+      : undefined,
+    effects: transition.effects,
+  })
+
+const setTransitionAutomationType = (
+  transition: Workflow.Transition,
+  automationType: Workflow.AutomationType,
+): Workflow.Transition =>
+  Workflow.Transition.make({
+    id: transition.id,
+    fromStatusId: transition.fromStatusId,
+    toStatusId: transition.toStatusId,
+    allowedRoles: [],
+    automationOnly: true,
+    automationType,
     effects: transition.effects,
   })
 
@@ -939,6 +956,18 @@ export const update = (model: Model, message: Message): UpdateReturn => {
                 setTransitionAutomationOnly(transition, value),
               ),
             banner: () => 'Transition automation setting updated',
+          }),
+          model,
+        ),
+
+      SelectedTransitionAutomationType: ({ transitionId, automationType }) =>
+        saveFlowChange(
+          evo(model, {
+            workflow: workflow =>
+              Workflow.updateTransition(workflow, transitionId, transition =>
+                setTransitionAutomationType(transition, automationType),
+              ),
+            banner: () => 'Transition automation type updated',
           }),
           model,
         ),

@@ -44,6 +44,7 @@ fragment FlowDefinitionFields on FlowDefinition {
     toStatusId
     allowedRoles
     automationOnly
+    automationType
   }
   deliveryAutomation {
     enabled
@@ -86,6 +87,7 @@ fragment FlowDefinitionFields on FlowDefinition {
     toStatusId
     allowedRoles
     automationOnly
+    automationType
   }
   deliveryAutomation {
     enabled
@@ -128,6 +130,7 @@ fragment FlowDefinitionFields on FlowDefinition {
     toStatusId
     allowedRoles
     automationOnly
+    automationType
   }
   deliveryAutomation {
     enabled
@@ -170,6 +173,7 @@ fragment FlowDefinitionFields on FlowDefinition {
     toStatusId
     allowedRoles
     automationOnly
+    automationType
   }
   deliveryAutomation {
     enabled

@@ -46,12 +46,14 @@ const transitionDefinition = (config: {
   readonly toStatusId: string
   readonly allowedRoles: ReadonlyArray<string>
   readonly automationOnly?: boolean
+  readonly automationType?: Workflow.AutomationType
 }): Workflow.Transition => ({
   id: config.id,
   fromStatusId: config.fromStatusId,
   toStatusId: config.toStatusId,
   allowedRoles: [...config.allowedRoles],
   automationOnly: config.automationOnly,
+  automationType: config.automationType,
   effects: [],
 })
 
@@ -158,7 +160,17 @@ export const DEFAULT_REQUISITION_FLOW: Workflow.WorkflowDefinition = {
       id: 'approved-to-closed',
       fromStatusId: 'APPROVED',
       toStatusId: 'CLOSED',
-      allowedRoles: ['SystemAdmin', 'OrderModerator', 'OrderModeratorLimited'],
+      allowedRoles: [],
+      automationOnly: true,
+      automationType: 'REQUISITION_ALL_ITEMS_LINKED',
+    }),
+    transitionDefinition({
+      id: 'closed-to-approved',
+      fromStatusId: 'CLOSED',
+      toStatusId: 'APPROVED',
+      allowedRoles: [],
+      automationOnly: true,
+      automationType: 'REQUISITION_ITEM_UNLINKED',
     }),
     transitionDefinition({
       id: 'rejected-to-pending-approval',
@@ -273,6 +285,7 @@ export const DEFAULT_ORDER_FLOW: Workflow.WorkflowDefinition = {
       toStatusId: 'DELIVERED',
       allowedRoles: [],
       automationOnly: true,
+      automationType: 'ORDER_DELIVERY_FULLY_DELIVERED',
     }),
     transitionDefinition({
       id: 'awaiting-delivery-to-partially-delivered',
@@ -280,6 +293,7 @@ export const DEFAULT_ORDER_FLOW: Workflow.WorkflowDefinition = {
       toStatusId: 'PARTIALLY_DELIVERED',
       allowedRoles: [],
       automationOnly: true,
+      automationType: 'ORDER_DELIVERY_PARTIALLY_DELIVERED',
     }),
     transitionDefinition({
       id: 'awaiting-delivery-to-partially-delivered-completion-required',
@@ -287,6 +301,7 @@ export const DEFAULT_ORDER_FLOW: Workflow.WorkflowDefinition = {
       toStatusId: 'PARTIALLY_DELIVERED_COMPLETION_REQUIRED',
       allowedRoles: [],
       automationOnly: true,
+      automationType: 'ORDER_DELIVERY_PARTIALLY_DELIVERED_COMPLETION_REQUIRED',
     }),
     transitionDefinition({
       id: 'awaiting-delivery-to-in-revision',
@@ -312,6 +327,7 @@ export const DEFAULT_ORDER_FLOW: Workflow.WorkflowDefinition = {
       toStatusId: 'DELIVERED',
       allowedRoles: [],
       automationOnly: true,
+      automationType: 'ORDER_DELIVERY_FULLY_DELIVERED',
     }),
     transitionDefinition({
       id: 'partially-delivered-completion-required-to-delivered',
@@ -319,17 +335,20 @@ export const DEFAULT_ORDER_FLOW: Workflow.WorkflowDefinition = {
       toStatusId: 'DELIVERED',
       allowedRoles: [],
       automationOnly: true,
+      automationType: 'ORDER_DELIVERY_FULLY_DELIVERED',
+    }),
+    transitionDefinition({
+      id: 'delivered-to-partially-delivered',
+      fromStatusId: 'DELIVERED',
+      toStatusId: 'PARTIALLY_DELIVERED',
+      allowedRoles: [],
+      automationOnly: true,
+      automationType: 'ORDER_DELIVERY_REOPENED',
     }),
     transitionDefinition({
       id: 'in-revision-to-awaiting-delivery',
       fromStatusId: 'IN_REVISION',
       toStatusId: 'AWAITING_DELIVERY',
-      allowedRoles: allRoles,
-    }),
-    transitionDefinition({
-      id: 'in-revision-to-delivered',
-      fromStatusId: 'IN_REVISION',
-      toStatusId: 'DELIVERED',
       allowedRoles: allRoles,
     }),
     transitionDefinition({

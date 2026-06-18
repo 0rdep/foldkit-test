@@ -181,6 +181,14 @@ export type FlowEditableAction =
   | 'REQUISITION_ITEM_EDIT'
   | 'REQUISITION_NOTE';
 
+export type FlowAutomationType =
+  | 'ORDER_DELIVERY_FULLY_DELIVERED'
+  | 'ORDER_DELIVERY_PARTIALLY_DELIVERED'
+  | 'ORDER_DELIVERY_PARTIALLY_DELIVERED_COMPLETION_REQUIRED'
+  | 'ORDER_DELIVERY_REOPENED'
+  | 'REQUISITION_ALL_ITEMS_LINKED'
+  | 'REQUISITION_ITEM_UNLINKED';
+
 export type FlowEditableActionDefinition = {
   readonly __typename?: 'FlowEditableActionDefinition';
   readonly action: FlowEditableAction;
@@ -324,6 +332,7 @@ export type FlowTransitionDefinition = {
 	readonly __typename?: 'FlowTransitionDefinition';
 	readonly allowedRoles: ReadonlyArray<Scalars['String']['output']>;
 	readonly automationOnly: Maybe<Scalars['Boolean']['output']>;
+	readonly automationType: Maybe<FlowAutomationType>;
 	readonly fromStatusId: Scalars['ID']['output'];
   readonly id: Scalars['ID']['output'];
   readonly toStatusId: Scalars['ID']['output'];
@@ -332,6 +341,7 @@ export type FlowTransitionDefinition = {
 export type FlowTransitionDefinitionInput = {
 	readonly allowedRoles: ReadonlyArray<Scalars['String']['input']>;
 	readonly automationOnly: InputMaybe<Scalars['Boolean']['input']>;
+	readonly automationType: InputMaybe<FlowAutomationType>;
 	readonly fromStatusId: Scalars['ID']['input'];
   readonly id: Scalars['ID']['input'];
   readonly toStatusId: Scalars['ID']['input'];

@@ -35,6 +35,7 @@ export type FlowDefinitionFieldsFragment = {
     readonly toStatusId: string
     readonly allowedRoles: ReadonlyArray<string>
     readonly automationOnly: boolean | null
+    readonly automationType: Types.FlowAutomationType | null
   }>
   readonly deliveryAutomation: {
     readonly enabled: boolean

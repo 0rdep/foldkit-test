@@ -66,6 +66,13 @@ export const UpdatedTransitionAutomationOnly = m(
     value: S.Boolean,
   },
 )
+export const SelectedTransitionAutomationType = m(
+  'SelectedTransitionAutomationType',
+  {
+    transitionId: S.String,
+    automationType: Workflow.AutomationType,
+  },
+)
 export const ClickedMovedTransitionEarlier = m(
   'ClickedMovedTransitionEarlier',
   { transitionId: S.String },
@@ -253,6 +260,7 @@ export const Message = S.Union([
   SelectedTransition,
   ClickedToggledTransitionRole,
   UpdatedTransitionAutomationOnly,
+  SelectedTransitionAutomationType,
   ClickedMovedTransitionEarlier,
   ClickedMovedTransitionLater,
   SelectedTransitionFromStatus,

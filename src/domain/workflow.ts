@@ -30,6 +30,16 @@ export const EditableAction = S.Literals([
 ])
 export type EditableAction = typeof EditableAction.Type
 
+export const AutomationType = S.Literals([
+  'REQUISITION_ALL_ITEMS_LINKED',
+  'REQUISITION_ITEM_UNLINKED',
+  'ORDER_DELIVERY_FULLY_DELIVERED',
+  'ORDER_DELIVERY_PARTIALLY_DELIVERED',
+  'ORDER_DELIVERY_PARTIALLY_DELIVERED_COMPLETION_REQUIRED',
+  'ORDER_DELIVERY_REOPENED',
+])
+export type AutomationType = typeof AutomationType.Type
+
 export const EditableActionDefinition = S.Struct({
   action: EditableAction,
   allowedRoles: S.Array(S.String),
@@ -68,6 +78,7 @@ export const Transition = S.Struct({
 	toStatusId: S.String,
 	allowedRoles: S.Array(S.String),
 	automationOnly: S.optional(S.Boolean),
+	automationType: S.optional(AutomationType),
 	effects: S.Array(EffectDefinition),
 })
 export type Transition = typeof Transition.Type

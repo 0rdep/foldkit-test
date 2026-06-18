@@ -36,6 +36,7 @@ export {
   SelectedDeliveryAutomationStatus,
   SelectedStatus,
   SelectedStatusType,
+  SelectedTransitionAutomationType,
   SelectedTransitionFromStatus,
   SelectedTransitionToStatus,
   SubmittedWorkflowImportJson,
