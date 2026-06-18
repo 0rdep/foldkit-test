@@ -13,6 +13,7 @@ import {
   ClickedDeletedStatus,
   ClickedMovedTransitionEarlier,
   ClickedMovedTransitionLater,
+  ClickedOpenedWorkflowImportModal,
   ClickedRequestedTransition,
   ClickedResetGraphViewport,
   ClickedRevertedFlowVersion,
@@ -28,11 +29,14 @@ import {
   ReleasedTransitionInput,
   SelectedActor,
   SelectedStatus,
+  SubmittedWorkflowImportJson,
   SucceededLoadFlowDefinitions,
   SucceededLoadFlowHistory,
   UpdatedFlowDocumentType,
   UpdatedTransitionAutomationOnly,
+  UpdatedWorkflowImportJson,
 } from './page/workspace/message'
+import { formatWorkflowExportJson } from './page/workspace/model'
 import { update } from './page/workspace/update'
 
 const documentStatus = (model: ReturnType<typeof defaultModel>): string =>
@@ -167,10 +171,10 @@ describe('workflow engine update', () => {
 
     const editPolicy = status?.editPolicy ?? Workflow.lockedEditPolicy
     expect(
-      Workflow.canRoleEditAction(editPolicy, 'items', 'OrderCreator'),
+      Workflow.canRoleEditAction(editPolicy, 'REQUISITION_ITEM_EDIT', 'OrderCreator'),
     ).toBe(true)
     expect(
-      Workflow.canRoleEditAction(editPolicy, 'deliveryDate', 'OrderCreator'),
+      Workflow.canRoleEditAction(editPolicy, 'REQUISITION_DELIVERY_DATE', 'OrderCreator'),
     ).toBe(true)
   })
 
@@ -271,6 +275,69 @@ describe('workflow engine update', () => {
     expect(applied.selectedStatusId).toBe(DEFAULT_WORKFLOW.initialStatusId)
     expect(applied.isDirty).toBe(true)
     expect(commands.length).toBe(1)
+  })
+
+  test('importing workflow json applies contents to the active draft identity', () => {
+    const model = defaultModel()
+    const currentWorkflow: Workflow.WorkflowDefinition = {
+      ...model.workflow,
+      id: 'flow-1',
+      name: 'Current draft',
+      version: 2,
+      state: 'draft',
+    }
+    const importedWorkflow: Workflow.WorkflowDefinition = {
+      ...currentWorkflow,
+      id: 'flow-2',
+      name: 'Imported workflow',
+      version: 8,
+      state: 'published',
+      statuses: currentWorkflow.statuses.map(status =>
+        status.id === 'DRAFT' ? { ...status, name: 'Imported Draft' } : status,
+      ),
+    }
+    const [opened] = update(
+      { ...model, workflow: currentWorkflow },
+      ClickedOpenedWorkflowImportModal(),
+    )
+    const [withJson] = update(
+      opened,
+      UpdatedWorkflowImportJson({
+        value: formatWorkflowExportJson(importedWorkflow),
+      }),
+    )
+    const [imported, commands] = update(withJson, SubmittedWorkflowImportJson())
+
+    expect(imported.workflow.id).toBe('flow-1')
+    expect(imported.workflow.name).toBe('Imported workflow')
+    expect(imported.workflow.version).toBe(2)
+    expect(imported.workflow.state).toBe('draft')
+    expect(
+      imported.workflow.statuses.find(status => status.id === 'DRAFT')?.name,
+    ).toBe('Imported Draft')
+    expect(imported.workflowJsonModalState._tag).toBe('WorkflowJsonModalClosed')
+    expect(imported.banner).toBe('Workflow JSON imported')
+    expect(imported.isDirty).toBe(true)
+    expect(commands.length).toBe(1)
+  })
+
+  test('invalid workflow json keeps the import modal open', () => {
+    const model = defaultModel()
+    const [opened] = update(model, ClickedOpenedWorkflowImportModal())
+    const [withJson] = update(
+      opened,
+      UpdatedWorkflowImportJson({ value: '{"workflow":true}' }),
+    )
+    const [failed, commands] = update(withJson, SubmittedWorkflowImportJson())
+
+    expect(failed.workflow).toBe(model.workflow)
+    expect(failed.workflowJsonModalState._tag).toBe(
+      'WorkflowImportJsonModalOpen',
+    )
+    expect(failed.banner).toBe(
+      'Import failed. Paste workflow JSON exported from this app.',
+    )
+    expect(commands).toStrictEqual([])
   })
 
   test('applying the default flow uses the selected document type', () => {

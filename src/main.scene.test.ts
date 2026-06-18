@@ -202,11 +202,11 @@ describe('workflow scene', () => {
       { update, view },
       Scene.with(defaultModel()),
       Scene.click(Scene.role('button', { name: 'Select Pending Approval' })),
-      Scene.click(Scene.role('button', { name: 'Items action roles' })),
-      Scene.click(Scene.role('button', { name: 'Items: OrderCreator' })),
+      Scene.click(Scene.role('button', { name: 'Edit items action roles' })),
+      Scene.click(Scene.role('button', { name: 'Edit items: OrderCreator' })),
       Scene.Command.expectHas(SaveWorkspace),
       Scene.expect(
-        Scene.role('button', { name: 'Items: OrderCreator' }),
+        Scene.role('button', { name: 'Edit items: OrderCreator' }),
       ).toHaveAttr('aria-pressed', 'false'),
       Scene.Command.resolve(SaveWorkspace, CompletedSaveWorkspace()),
     )
@@ -248,8 +248,8 @@ describe('workflow scene', () => {
       { update, view },
       Scene.with(defaultModel()),
       Scene.click(Scene.role('button', { name: 'Select Pending Approval' })),
-      Scene.click(Scene.role('button', { name: 'Items action roles' })),
-      Scene.click(Scene.role('button', { name: 'Items: OrderCreator' })),
+      Scene.click(Scene.role('button', { name: 'Edit items action roles' })),
+      Scene.click(Scene.role('button', { name: 'Edit items: OrderCreator' })),
       Scene.Command.resolve(SaveWorkspace, CompletedSaveWorkspace()),
       Scene.click(Scene.role('button', { name: 'Undo' })),
       Scene.expect(

@@ -165,17 +165,21 @@ export type FlowDocumentType =
   | 'requisition';
 
 export type FlowEditableAction =
-  | 'attachments'
-  | 'createOrder'
-  | 'delete'
-  | 'deliveryDate'
-  | 'discount'
-  | 'duplicate'
-  | 'items'
-  | 'note'
-  | 'shipments'
-  | 'subCompany'
-  | 'supplier';
+  | 'ORDER_DELETE'
+  | 'ORDER_DELIVERY_DATE'
+  | 'ORDER_DISCOUNT'
+  | 'ORDER_ITEM_EDIT'
+  | 'ORDER_NOTE'
+  | 'ORDER_SHIPMENTS'
+  | 'ORDER_SUB_COMPANY'
+  | 'ORDER_SUPPLIER'
+  | 'REQUISITION_ATTACHMENTS'
+  | 'REQUISITION_CREATE_ORDER'
+  | 'REQUISITION_DELETE'
+  | 'REQUISITION_DELIVERY_DATE'
+  | 'REQUISITION_DISCOUNT'
+  | 'REQUISITION_ITEM_EDIT'
+  | 'REQUISITION_NOTE';
 
 export type FlowEditableActionDefinition = {
   readonly __typename?: 'FlowEditableActionDefinition';

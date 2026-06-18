@@ -76,6 +76,18 @@ export const GraphContextMenuState = S.Union([
 ])
 export type GraphContextMenuState = typeof GraphContextMenuState.Type
 
+export const WorkflowJsonModalClosed = ts('WorkflowJsonModalClosed')
+export const WorkflowExportJsonModalOpen = ts('WorkflowExportJsonModalOpen')
+export const WorkflowImportJsonModalOpen = ts('WorkflowImportJsonModalOpen', {
+  value: S.String,
+})
+export const WorkflowJsonModalState = S.Union([
+  WorkflowJsonModalClosed,
+  WorkflowExportJsonModalOpen,
+  WorkflowImportJsonModalOpen,
+])
+export type WorkflowJsonModalState = typeof WorkflowJsonModalState.Type
+
 export const PendingOperation = S.Literals([
   'loadCompanies',
   'loadFlowDefinitions',
@@ -104,6 +116,7 @@ export const Model = S.Struct({
   graphPanState: GraphPanState,
   transitionDragState: TransitionDragState,
   graphContextMenuState: GraphContextMenuState,
+  workflowJsonModalState: WorkflowJsonModalState,
   isActionMenuOpen: S.Boolean,
   isPreviewSaved: S.Boolean,
   isDirty: S.Boolean,
@@ -118,3 +131,12 @@ export const Model = S.Struct({
 })
 
 export type Model = typeof Model.Type
+
+export const formatWorkflowExportJson = (
+  workflow: Workflow.WorkflowDefinition,
+): string =>
+  JSON.stringify(
+    S.encodeSync(Workflow.WorkflowDefinition)(workflow),
+    null,
+    2,
+  ) ?? ''

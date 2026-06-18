@@ -12,17 +12,21 @@ export const FlowDefinitionState = S.Literals([
 export type FlowDefinitionState = typeof FlowDefinitionState.Type
 
 export const EditableAction = S.Literals([
-  'note',
-  'deliveryDate',
-  'items',
-  'discount',
-  'attachments',
-  'supplier',
-  'subCompany',
-  'shipments',
-  'createOrder',
-  'delete',
-  'duplicate',
+  'REQUISITION_NOTE',
+  'REQUISITION_DELIVERY_DATE',
+  'REQUISITION_DISCOUNT',
+  'REQUISITION_ATTACHMENTS',
+  'REQUISITION_DELETE',
+  'REQUISITION_CREATE_ORDER',
+  'REQUISITION_ITEM_EDIT',
+  'ORDER_NOTE',
+  'ORDER_DELIVERY_DATE',
+  'ORDER_SUPPLIER',
+  'ORDER_SUB_COMPANY',
+  'ORDER_DISCOUNT',
+  'ORDER_SHIPMENTS',
+  'ORDER_DELETE',
+  'ORDER_ITEM_EDIT',
 ])
 export type EditableAction = typeof EditableAction.Type
 
@@ -154,42 +158,72 @@ export type TransitionResult = {
 }
 
 export const editableActions: ReadonlyArray<EditableAction> = [
-  'note',
-  'deliveryDate',
-  'items',
-  'discount',
-  'attachments',
-  'supplier',
-  'subCompany',
-  'shipments',
-  'createOrder',
-  'delete',
-  'duplicate',
+  'REQUISITION_NOTE',
+  'REQUISITION_DELIVERY_DATE',
+  'REQUISITION_DISCOUNT',
+  'REQUISITION_ATTACHMENTS',
+  'REQUISITION_DELETE',
+  'REQUISITION_CREATE_ORDER',
+  'REQUISITION_ITEM_EDIT',
+  'ORDER_NOTE',
+  'ORDER_DELIVERY_DATE',
+  'ORDER_SUPPLIER',
+  'ORDER_SUB_COMPANY',
+  'ORDER_DISCOUNT',
+  'ORDER_SHIPMENTS',
+  'ORDER_DELETE',
+  'ORDER_ITEM_EDIT',
 ]
 
-export const requisitionEditableActions: ReadonlyArray<EditableAction> = [
-  'note',
-  'deliveryDate',
-  'items',
-  'discount',
-  'attachments',
-  'createOrder',
-  'delete',
-  'duplicate',
+export type EditableActionGroup = Readonly<{
+  title: string
+  actions: ReadonlyArray<EditableAction>
+}>
+
+export const requisitionEditableActionGroups: ReadonlyArray<EditableActionGroup> = [
+  {
+    title: 'Requisition',
+    actions: [
+      'REQUISITION_NOTE',
+      'REQUISITION_DELIVERY_DATE',
+      'REQUISITION_DISCOUNT',
+      'REQUISITION_ATTACHMENTS',
+      'REQUISITION_DELETE',
+      'REQUISITION_CREATE_ORDER',
+    ],
+  },
+  { title: 'Requisition item', actions: ['REQUISITION_ITEM_EDIT'] },
 ]
 
-export const orderEditableActions: ReadonlyArray<EditableAction> = [
-  'note',
-  'deliveryDate',
-  'items',
-  'discount',
-  'attachments',
-  'supplier',
-  'subCompany',
-  'shipments',
-  'delete',
-  'duplicate',
+export const orderEditableActionGroups: ReadonlyArray<EditableActionGroup> = [
+  {
+    title: 'Order',
+    actions: [
+      'ORDER_NOTE',
+      'ORDER_DELIVERY_DATE',
+      'ORDER_SUPPLIER',
+      'ORDER_SUB_COMPANY',
+      'ORDER_DISCOUNT',
+      'ORDER_SHIPMENTS',
+      'ORDER_DELETE',
+    ],
+  },
+  { title: 'Order item', actions: ['ORDER_ITEM_EDIT'] },
 ]
+
+export const requisitionEditableActions: ReadonlyArray<EditableAction> =
+  Array.flatten(Array.map(requisitionEditableActionGroups, group => group.actions))
+
+export const orderEditableActions: ReadonlyArray<EditableAction> = Array.flatten(
+  Array.map(orderEditableActionGroups, group => group.actions),
+)
+
+export const editableActionGroupsForDocumentType = (
+  documentType: string,
+): ReadonlyArray<EditableActionGroup> =>
+  String.toLowerCase(documentType) === 'order'
+    ? orderEditableActionGroups
+    : requisitionEditableActionGroups
 
 export const editableActionsForDocumentType = (
   documentType: string,
@@ -209,6 +243,67 @@ export const editableAction = (
   action: EditableAction,
   allowedRoles: ReadonlyArray<string>,
 ): EditableActionDefinition => ({ action, allowedRoles: [...allowedRoles] })
+
+export const editableActionFromLegacy = (
+  documentType: string,
+  action: string,
+): Option.Option<EditableAction> => {
+  const isOrder = String.toLowerCase(documentType) === 'order'
+
+  if (isOrder) {
+    if (action === 'note') {
+      return Option.some('ORDER_NOTE')
+    }
+    if (action === 'deliveryDate') {
+      return Option.some('ORDER_DELIVERY_DATE')
+    }
+    if (action === 'items') {
+      return Option.some('ORDER_ITEM_EDIT')
+    }
+    if (action === 'discount') {
+      return Option.some('ORDER_DISCOUNT')
+    }
+    if (action === 'supplier') {
+      return Option.some('ORDER_SUPPLIER')
+    }
+    if (action === 'subCompany') {
+      return Option.some('ORDER_SUB_COMPANY')
+    }
+    if (action === 'shipments') {
+      return Option.some('ORDER_SHIPMENTS')
+    }
+    if (action === 'delete') {
+      return Option.some('ORDER_DELETE')
+    }
+    return Option.none()
+  }
+
+  if (action === 'note') {
+    return Option.some('REQUISITION_NOTE')
+  }
+  if (action === 'deliveryDate') {
+    return Option.some('REQUISITION_DELIVERY_DATE')
+  }
+  if (action === 'items') {
+    return Option.some('REQUISITION_ITEM_EDIT')
+  }
+  if (action === 'discount') {
+    return Option.some('REQUISITION_DISCOUNT')
+  }
+  if (action === 'attachments') {
+    return Option.some('REQUISITION_ATTACHMENTS')
+  }
+  if (action === 'createOrder') {
+    return Option.some('REQUISITION_CREATE_ORDER')
+  }
+  if (action === 'delete') {
+    return Option.some('REQUISITION_DELETE')
+  }
+  if (Array.contains(editableActions, action as EditableAction)) {
+    return Option.some(action as EditableAction)
+  }
+  return Option.none()
+}
 
 export const editPolicyFromActions = (
   actions: ReadonlyArray<EditableAction>,
@@ -233,13 +328,12 @@ export const canRoleEditAction = (
 
 export const unlockedEditPolicy: EditPolicy = editPolicyFromActions(
   [
-    'note',
-    'deliveryDate',
-    'items',
-    'discount',
-    'attachments',
-    'delete',
-    'duplicate',
+    'REQUISITION_NOTE',
+    'REQUISITION_DELIVERY_DATE',
+    'REQUISITION_ITEM_EDIT',
+    'REQUISITION_DISCOUNT',
+    'REQUISITION_ATTACHMENTS',
+    'REQUISITION_DELETE',
   ],
   requisitionWriteRoles,
 )
@@ -325,35 +419,47 @@ export const effectTypeLabel = (effectType: EffectType): string => {
 }
 
 export const editableActionLabel = (action: EditableAction): string => {
-  if (action === 'deliveryDate') {
+  if (action === 'REQUISITION_DELIVERY_DATE') {
     return 'Delivery date'
   }
-  if (action === 'items') {
-    return 'Items'
+  if (action === 'ORDER_DELIVERY_DATE') {
+    return 'Delivery date'
   }
-  if (action === 'discount') {
+  if (action === 'REQUISITION_ITEM_EDIT') {
+    return 'Edit items'
+  }
+  if (action === 'ORDER_ITEM_EDIT') {
+    return 'Edit items'
+  }
+  if (action === 'REQUISITION_DISCOUNT') {
     return 'Discount'
   }
-  if (action === 'attachments') {
+  if (action === 'ORDER_DISCOUNT') {
+    return 'Discount'
+  }
+  if (action === 'REQUISITION_ATTACHMENTS') {
     return 'Attachments'
   }
-  if (action === 'supplier') {
+  if (action === 'ORDER_SUPPLIER') {
     return 'Supplier'
   }
-  if (action === 'subCompany') {
+  if (action === 'ORDER_SUB_COMPANY') {
     return 'Sub-company'
   }
-  if (action === 'shipments') {
+  if (action === 'ORDER_SHIPMENTS') {
     return 'Shipments'
   }
-  if (action === 'createOrder') {
+  if (action === 'REQUISITION_CREATE_ORDER') {
     return 'Create order'
   }
-  if (action === 'delete') {
+  if (action === 'REQUISITION_DELETE') {
     return 'Delete'
   }
-  if (action === 'duplicate') {
-    return 'Duplicate'
+  if (action === 'ORDER_DELETE') {
+    return 'Delete'
+  }
+  if (action === 'ORDER_NOTE') {
+    return 'Note'
   }
   return 'Note'
 }

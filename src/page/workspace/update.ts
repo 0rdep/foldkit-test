@@ -1,4 +1,4 @@
-import { Array, Match as M, Option, pipe } from 'effect'
+import { Array, Match as M, Option, Schema as S, pipe } from 'effect'
 import { Command } from 'foldkit'
 import { evo } from 'foldkit/struct'
 
@@ -12,6 +12,7 @@ import { defaultWorkflowForDocumentType } from '../../default-flow-definitions'
 import { Workflow } from '../../domain'
 import * as MockBackend from '../../mockBackend'
 import {
+  CopyWorkflowExportJson,
   LoadFlowDefinitions,
   LoadFlowHistory,
   PublishFlow,
@@ -31,6 +32,10 @@ import {
   type PendingOperation,
   TransitionDragIdle,
   TransitionDragging,
+  WorkflowExportJsonModalOpen,
+  WorkflowImportJsonModalOpen,
+  WorkflowJsonModalClosed,
+  formatWorkflowExportJson,
 } from './model'
 
 type UpdateReturn = readonly [Model, ReadonlyArray<Command.Command<Message>>]
@@ -50,6 +55,8 @@ const commandResultMessageTags: ReadonlyArray<string> = [
   'FailedSaveFlowDraft',
   'SucceededPublishFlow',
   'FailedPublishFlow',
+  'SucceededCopyWorkflowExportJson',
+  'FailedCopyWorkflowExportJson',
 ]
 
 export const isLoading = (model: Model): boolean =>
@@ -172,6 +179,18 @@ const workflowFromHistory = (
     state: () => currentWorkflow.state,
   })
 
+const workflowFromExportJson = (
+  value: string,
+): Option.Option<Workflow.WorkflowDefinition> => {
+  try {
+    return Option.some(
+      S.decodeUnknownSync(Workflow.WorkflowDefinition)(JSON.parse(value)),
+    )
+  } catch {
+    return Option.none()
+  }
+}
+
 const applyWorkflowContents = (
   model: Model,
   sourceWorkflow: Workflow.WorkflowDefinition,
@@ -192,6 +211,8 @@ const applyWorkflowContents = (
         )
           ? selectedTransitionId
           : (nextWorkflow.transitions[0]?.id ?? ''),
+      selectedFlowDocumentType: () =>
+        flowDocumentTypeFromWorkflow(nextWorkflow),
       selectedItemKind: selectedItemKind =>
         selectedItemExists(nextWorkflow, selectedItemKind, model.selectedItemId)
           ? selectedItemKind
@@ -202,6 +223,7 @@ const applyWorkflowContents = (
           : '',
       isActionMenuOpen: () => false,
       graphContextMenuState: () => GraphContextMenuClosed(),
+      workflowJsonModalState: () => WorkflowJsonModalClosed(),
       banner: () => banner,
     }),
     model,
@@ -259,6 +281,7 @@ const resetModel = (): Model =>
     graphPanState: GraphPanIdle(),
     transitionDragState: TransitionDragIdle(),
     graphContextMenuState: GraphContextMenuClosed(),
+    workflowJsonModalState: WorkflowJsonModalClosed(),
     isActionMenuOpen: false,
     isPreviewSaved: false,
     isDirty: false,
@@ -1462,6 +1485,82 @@ export const update = (model: Model, message: Message): UpdateReturn => {
 
       ClickedResetWorkspace: () => withSavedWorkspace(resetModel()),
 
+      ClickedOpenedWorkflowExportModal: () => [
+        evo(model, {
+          workflowJsonModalState: () => WorkflowExportJsonModalOpen(),
+          graphContextMenuState: () => GraphContextMenuClosed(),
+          banner: () => '',
+        }),
+        [],
+      ],
+
+      ClickedOpenedWorkflowImportModal: () => [
+        evo(model, {
+          workflowJsonModalState: () =>
+            WorkflowImportJsonModalOpen({ value: '' }),
+          graphContextMenuState: () => GraphContextMenuClosed(),
+          banner: () => '',
+        }),
+        [],
+      ],
+
+      ClickedClosedWorkflowJsonModal: () => [
+        evo(model, {
+          workflowJsonModalState: () => WorkflowJsonModalClosed(),
+          banner: () => '',
+        }),
+        [],
+      ],
+
+      ClickedCopiedWorkflowExportJson: () => [
+        evo(model, { banner: () => '' }),
+        [
+          CopyWorkflowExportJson({
+            value: formatWorkflowExportJson(model.workflow),
+          }),
+        ],
+      ],
+
+      UpdatedWorkflowImportJson: ({ value }) => {
+        if (
+          model.workflowJsonModalState._tag !== 'WorkflowImportJsonModalOpen'
+        ) {
+          return [model, []]
+        }
+
+        return [
+          evo(model, {
+            workflowJsonModalState: () =>
+              WorkflowImportJsonModalOpen({ value }),
+            banner: () => '',
+          }),
+          [],
+        ]
+      },
+
+      SubmittedWorkflowImportJson: () => {
+        if (
+          model.workflowJsonModalState._tag !== 'WorkflowImportJsonModalOpen'
+        ) {
+          return [model, []]
+        }
+
+        return pipe(
+          workflowFromExportJson(model.workflowJsonModalState.value),
+          Option.match({
+            onNone: () => [
+              evo(model, {
+                banner: () =>
+                  'Import failed. Paste workflow JSON exported from this app.',
+              }),
+              [],
+            ],
+            onSome: workflow =>
+              applyWorkflowContents(model, workflow, 'Workflow JSON imported'),
+          }),
+        )
+      },
+
       ClickedAppliedDefaultFlow: () =>
         applyWorkflowContents(
           model,
@@ -1542,6 +1641,16 @@ export const update = (model: Model, message: Message): UpdateReturn => {
       ],
 
       CompletedSaveWorkspace: () => [model, []],
+
+      SucceededCopyWorkflowExportJson: () => [
+        evo(model, { banner: () => 'Workflow JSON copied to clipboard' }),
+        [],
+      ],
+
+      FailedCopyWorkflowExportJson: () => [
+        evo(model, { banner: () => 'Failed to copy workflow JSON' }),
+        [],
+      ],
 
       SucceededLoadFlowDefinitions: ({ definitions }) => {
         const maybeDefinition = Array.head(definitions)

@@ -171,6 +171,22 @@ export const ClickedZoomedGraphIn = m('ClickedZoomedGraphIn')
 export const ClickedZoomedGraphOut = m('ClickedZoomedGraphOut')
 export const ClickedResetGraphViewport = m('ClickedResetGraphViewport')
 export const ClickedResetWorkspace = m('ClickedResetWorkspace')
+export const ClickedOpenedWorkflowExportModal = m(
+  'ClickedOpenedWorkflowExportModal',
+)
+export const ClickedOpenedWorkflowImportModal = m(
+  'ClickedOpenedWorkflowImportModal',
+)
+export const ClickedClosedWorkflowJsonModal = m(
+  'ClickedClosedWorkflowJsonModal',
+)
+export const ClickedCopiedWorkflowExportJson = m(
+  'ClickedCopiedWorkflowExportJson',
+)
+export const UpdatedWorkflowImportJson = m('UpdatedWorkflowImportJson', {
+  value: S.String,
+})
+export const SubmittedWorkflowImportJson = m('SubmittedWorkflowImportJson')
 export const ClickedAppliedDefaultFlow = m('ClickedAppliedDefaultFlow')
 export const ClickedLoadedRemoteFlowDefinitions = m(
   'ClickedLoadedRemoteFlowDefinitions',
@@ -182,6 +198,10 @@ export const ClickedRevertedFlowVersion = m('ClickedRevertedFlowVersion', {
 export const ClickedSavedRemoteFlowDraft = m('ClickedSavedRemoteFlowDraft')
 export const ClickedPublishedRemoteFlow = m('ClickedPublishedRemoteFlow')
 export const CompletedSaveWorkspace = m('CompletedSaveWorkspace')
+export const SucceededCopyWorkflowExportJson = m(
+  'SucceededCopyWorkflowExportJson',
+)
+export const FailedCopyWorkflowExportJson = m('FailedCopyWorkflowExportJson')
 export const SucceededLoadFlowDefinitions = m('SucceededLoadFlowDefinitions', {
   definitions: S.Array(Workflow.WorkflowDefinition),
 })
@@ -264,12 +284,20 @@ export const Message = S.Union([
   ClickedZoomedGraphOut,
   ClickedResetGraphViewport,
   ClickedResetWorkspace,
+  ClickedOpenedWorkflowExportModal,
+  ClickedOpenedWorkflowImportModal,
+  ClickedClosedWorkflowJsonModal,
+  ClickedCopiedWorkflowExportJson,
+  UpdatedWorkflowImportJson,
+  SubmittedWorkflowImportJson,
   ClickedAppliedDefaultFlow,
   ClickedLoadedRemoteFlowDefinitions,
   ClickedRevertedFlowVersion,
   ClickedSavedRemoteFlowDraft,
   ClickedPublishedRemoteFlow,
   CompletedSaveWorkspace,
+  SucceededCopyWorkflowExportJson,
+  FailedCopyWorkflowExportJson,
   SucceededLoadFlowDefinitions,
   FailedLoadFlowDefinitions,
   SucceededLoadCompanies,

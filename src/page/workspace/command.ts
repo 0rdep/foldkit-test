@@ -28,11 +28,13 @@ import type {
 } from '../../graphql/operations-generated'
 import {
   CompletedSaveWorkspace,
+  FailedCopyWorkflowExportJson,
   FailedLoadCompanies,
   FailedLoadFlowDefinitions,
   FailedLoadFlowHistory,
   FailedPublishFlow,
   FailedSaveFlowDraft,
+  SucceededCopyWorkflowExportJson,
   SucceededLoadCompanies,
   SucceededLoadFlowDefinitions,
   SucceededLoadFlowHistory,
@@ -92,6 +94,21 @@ export const SaveWorkspace = Command.define(
   ),
 )
 
+export const CopyWorkflowExportJson = Command.define(
+  'CopyWorkflowExportJson',
+  { value: S.String },
+  SucceededCopyWorkflowExportJson,
+  FailedCopyWorkflowExportJson,
+)(({ value }) =>
+  Effect.tryPromise({
+    try: () => navigator.clipboard.writeText(value),
+    catch: () => new Error('Failed to copy workflow JSON'),
+  }).pipe(
+    Effect.as(SucceededCopyWorkflowExportJson()),
+    Effect.catch(() => Effect.succeed(FailedCopyWorkflowExportJson())),
+  ),
+)
+
 export const LoadFlowDefinitions = Command.define(
   'LoadFlowDefinitions',
   {
@@ -135,7 +152,7 @@ export const LoadCompanies = Command.define(
     Effect.catch((error: string) =>
       Effect.succeed(FailedLoadCompanies({ error })),
     ),
-  )
+  ),
 )
 
 export const LoadFlowHistory = Command.define(
@@ -146,7 +163,10 @@ export const LoadFlowHistory = Command.define(
   Graphql.request<
     FlowDefinitionHistoryQuery,
     FlowDefinitionHistoryQueryVariables
-  >(FlowDefinitionHistoryQueryText, { flowId, companyId: companyId ?? null }).pipe(
+  >(FlowDefinitionHistoryQueryText, {
+    flowId,
+    companyId: companyId ?? null,
+  }).pipe(
     Effect.map(data =>
       SucceededLoadFlowHistory({
         definitions: data.Flow.history.map(toWorkflowDefinition),

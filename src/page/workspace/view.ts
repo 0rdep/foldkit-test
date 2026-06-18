@@ -41,10 +41,7 @@ import {
 } from './message'
 import type { Model } from './model'
 
-const statusTypes: ReadonlyArray<Workflow.StatusType> = [
-  'normal',
-  'final',
-]
+const statusTypes: ReadonlyArray<Workflow.StatusType> = ['normal', 'final']
 
 const transitionRoleIds: ReadonlyArray<string> = [
   'SystemAdmin',
@@ -1565,12 +1562,53 @@ const editableActionDisclosureRow = (
   )
 }
 
+const editableActionGroupDisclosure = (
+  model: Model,
+  status: Workflow.Status,
+  group: Workflow.EditableActionGroup,
+): Html => {
+  const h = html<Message>()
+
+  return h.details(
+    [
+      h.Class('rounded-xl border border-slate-200 bg-slate-50 p-2'),
+      h.Attribute('open', 'open'),
+    ],
+    [
+      h.summary(
+        [
+          h.Class(
+            'flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-2 py-2 text-sm font-semibold text-slate-900 marker:hidden hover:bg-white',
+          ),
+        ],
+        [
+          h.span([h.Class('truncate')], [group.title]),
+          h.span(
+            [
+              h.Class(
+                'shrink-0 rounded-full bg-white px-2 py-0.5 text-xs font-medium text-slate-500',
+              ),
+            ],
+            [`${group.actions.length}`],
+          ),
+        ],
+      ),
+      h.div(
+        [h.Class('mt-2 grid gap-2')],
+        Array.map(group.actions, action =>
+          editableActionDisclosureRow(model, status, action),
+        ),
+      ),
+    ],
+  )
+}
+
 const statusEditableActionsSection = (
   model: Model,
   status: Workflow.Status,
 ): Html => {
   const h = html<Message>()
-  const editableActions = Workflow.editableActionsForDocumentType(
+  const editableActionGroups = Workflow.editableActionGroupsForDocumentType(
     model.workflow.documentType,
   )
 
@@ -1580,8 +1618,8 @@ const statusEditableActionsSection = (
       h.h3([h.Class(headingClass)], ['Editable actions']),
       h.div(
         [h.Class('mt-3 grid gap-2')],
-        Array.map(editableActions, action =>
-          editableActionDisclosureRow(model, status, action),
+        Array.map(editableActionGroups, group =>
+          editableActionGroupDisclosure(model, status, group),
         ),
       ),
     ],
@@ -1665,22 +1703,29 @@ const deliveryAutomationSection = (
   return h.div(
     [h.Class('mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4')],
     [
-      h.h3([h.Class('text-sm font-semibold text-amber-950')], [
-        'Delivery automation',
-      ]),
-      h.p([h.Class('mt-1 text-xs leading-5 text-amber-800')], [
-        automation.enabled
-          ? 'Shipment changes automatically move orders according to delivery completion.'
-          : 'Shipment changes do not automatically move orders for this flow.',
-      ]),
+      h.h3(
+        [h.Class('text-sm font-semibold text-amber-950')],
+        ['Delivery automation'],
+      ),
+      h.p(
+        [h.Class('mt-1 text-xs leading-5 text-amber-800')],
+        [
+          automation.enabled
+            ? 'Shipment changes automatically move orders according to delivery completion.'
+            : 'Shipment changes do not automatically move orders for this flow.',
+        ],
+      ),
       h.ul(
         [h.Class('mt-3 space-y-1 text-xs text-amber-900')],
         [
           h.li([], [`Fully delivered: ${automation.fullyDeliveredStatusId}`]),
           h.li([], [`Partial: ${automation.partiallyDeliveredStatusId}`]),
-          h.li([], [
-            `Completion required: ${automation.partiallyDeliveredCompletionRequiredStatusId}`,
-          ]),
+          h.li(
+            [],
+            [
+              `Completion required: ${automation.partiallyDeliveredCompletionRequiredStatusId}`,
+            ],
+          ),
         ],
       ),
     ],
@@ -1743,7 +1788,8 @@ const statusInspector = (model: Model, statusId: string): Html => {
                 id: 'status-id',
                 label: 'Status id',
                 value: status.id,
-                onInput: value => UpdatedStatusId({ statusId: status.id, value }),
+                onInput: value =>
+                  UpdatedStatusId({ statusId: status.id, value }),
                 className: inputClass,
               }),
               uiInput({

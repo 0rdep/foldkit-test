@@ -1,3 +1,5 @@
+import { Option } from 'effect'
+
 import { Workflow } from '../domain'
 import type {
   FlowEditableActionDefinitionInput,
@@ -27,10 +29,14 @@ const editableActionsFromPolicy = (
   }))
 
 const editPolicyFromActions = (
+  documentType: string,
   editableActions: FlowDefinitionFieldsFragment['statuses'][number]['editableActions'],
 ): Workflow.EditPolicy =>
-  editableActions.map(definition =>
-    Workflow.editableAction(definition.action, definition.allowedRoles),
+  editableActions.flatMap(definition =>
+    Option.match(Workflow.editableActionFromLegacy(documentType, definition.action), {
+      onNone: () => [],
+      onSome: action => [Workflow.editableAction(action, definition.allowedRoles)],
+    }),
   )
 
 export const toWorkflowDefinition = (
@@ -46,7 +52,10 @@ export const toWorkflowDefinition = (
     id: status.id,
     name: status.name,
     type: statusTypeFromKind(status.kind),
-    editPolicy: editPolicyFromActions(status.editableActions),
+    editPolicy: editPolicyFromActions(
+      definition.documentType,
+      status.editableActions,
+    ),
   })),
   transitions: definition.transitions.map(transition => ({
     id: transition.id,

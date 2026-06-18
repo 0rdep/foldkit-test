@@ -55,12 +55,6 @@ const transitionDefinition = (config: {
   effects: [],
 })
 
-const duplicateAction = editableAction('duplicate', orderWriteRoles)
-const requisitionDuplicateAction = editableAction(
-  'duplicate',
-  requisitionWriteRoles,
-)
-
 export const DEFAULT_REQUISITION_FLOW: Workflow.WorkflowDefinition = {
   id: 'default-requisition-flow',
   name: 'Default requisition flow',
@@ -74,13 +68,12 @@ export const DEFAULT_REQUISITION_FLOW: Workflow.WorkflowDefinition = {
       name: 'Draft',
       type: 'draft',
       editPolicy: [
-        editableAction('note', requisitionWriteRoles),
-        editableAction('deliveryDate', requisitionWriteRoles),
-        editableAction('items', requisitionWriteRoles),
-        editableAction('discount', requisitionWriteRoles),
-        editableAction('attachments', requisitionWriteRoles),
-        editableAction('delete', requisitionWriteRoles),
-        requisitionDuplicateAction,
+        editableAction('REQUISITION_NOTE', requisitionWriteRoles),
+        editableAction('REQUISITION_DELIVERY_DATE', requisitionWriteRoles),
+        editableAction('REQUISITION_ITEM_EDIT', requisitionWriteRoles),
+        editableAction('REQUISITION_DISCOUNT', requisitionWriteRoles),
+        editableAction('REQUISITION_ATTACHMENTS', requisitionWriteRoles),
+        editableAction('REQUISITION_DELETE', requisitionWriteRoles),
       ],
     },
     {
@@ -88,12 +81,11 @@ export const DEFAULT_REQUISITION_FLOW: Workflow.WorkflowDefinition = {
       name: 'Pending Approval',
       type: 'normal',
       editPolicy: [
-        editableAction('note', requisitionFullEditRoles),
-        editableAction('deliveryDate', requisitionFullEditRoles),
-        editableAction('items', requisitionFullEditRoles),
-        editableAction('discount', requisitionFullEditRoles),
-        editableAction('attachments', requisitionWriteRoles),
-        requisitionDuplicateAction,
+        editableAction('REQUISITION_NOTE', requisitionFullEditRoles),
+        editableAction('REQUISITION_DELIVERY_DATE', requisitionFullEditRoles),
+        editableAction('REQUISITION_ITEM_EDIT', requisitionFullEditRoles),
+        editableAction('REQUISITION_DISCOUNT', requisitionFullEditRoles),
+        editableAction('REQUISITION_ATTACHMENTS', requisitionWriteRoles),
       ],
     },
     {
@@ -101,12 +93,11 @@ export const DEFAULT_REQUISITION_FLOW: Workflow.WorkflowDefinition = {
       name: 'Approved',
       type: 'normal',
       editPolicy: [
-        editableAction('note', requisitionFullEditRoles),
-        editableAction('deliveryDate', requisitionFullEditRoles),
-        editableAction('items', requisitionFullEditRoles),
-        editableAction('attachments', requisitionWriteRoles),
-        editableAction('createOrder', requisitionWriteRoles),
-        requisitionDuplicateAction,
+        editableAction('REQUISITION_NOTE', requisitionFullEditRoles),
+        editableAction('REQUISITION_DELIVERY_DATE', requisitionFullEditRoles),
+        editableAction('REQUISITION_ITEM_EDIT', requisitionFullEditRoles),
+        editableAction('REQUISITION_ATTACHMENTS', requisitionWriteRoles),
+        editableAction('REQUISITION_CREATE_ORDER', requisitionWriteRoles),
       ],
     },
     {
@@ -114,26 +105,22 @@ export const DEFAULT_REQUISITION_FLOW: Workflow.WorkflowDefinition = {
       name: 'Rejected',
       type: 'normal',
       editPolicy: [
-        editableAction('note', requisitionWriteRoles),
-        editableAction('deliveryDate', requisitionWriteRoles),
-        editableAction('items', requisitionWriteRoles),
-        requisitionDuplicateAction,
+        editableAction('REQUISITION_NOTE', requisitionWriteRoles),
+        editableAction('REQUISITION_DELIVERY_DATE', requisitionWriteRoles),
+        editableAction('REQUISITION_ITEM_EDIT', requisitionWriteRoles),
       ],
     },
     {
       id: 'CANCELLED',
       name: 'Cancelled',
       type: 'final',
-      editPolicy: [
-        editableAction('note', requisitionFullEditRoles),
-        requisitionDuplicateAction,
-      ],
+      editPolicy: [editableAction('REQUISITION_NOTE', requisitionFullEditRoles)],
     },
     {
       id: 'CLOSED',
       name: 'Closed',
       type: 'final',
-      editPolicy: [requisitionDuplicateAction],
+      editPolicy: [],
     },
   ],
   transitions: [
@@ -201,14 +188,12 @@ export const DEFAULT_ORDER_FLOW: Workflow.WorkflowDefinition = {
       name: 'Draft',
       type: 'draft',
       editPolicy: [
-        editableAction('note', orderWriteRoles),
-        editableAction('deliveryDate', orderWriteRoles),
-        editableAction('supplier', orderWriteRoles),
-        editableAction('items', orderLimitedEditRoles),
-        editableAction('discount', orderLimitedEditRoles),
-        editableAction('attachments', orderWriteRoles),
-        editableAction('delete', orderWriteRoles),
-        duplicateAction,
+        editableAction('ORDER_NOTE', orderWriteRoles),
+        editableAction('ORDER_DELIVERY_DATE', orderWriteRoles),
+        editableAction('ORDER_SUPPLIER', orderWriteRoles),
+        editableAction('ORDER_ITEM_EDIT', orderLimitedEditRoles),
+        editableAction('ORDER_DISCOUNT', orderLimitedEditRoles),
+        editableAction('ORDER_DELETE', orderWriteRoles),
       ],
     },
     {
@@ -216,10 +201,8 @@ export const DEFAULT_ORDER_FLOW: Workflow.WorkflowDefinition = {
       name: 'Awaiting Delivery',
       type: 'normal',
       editPolicy: [
-        editableAction('note', orderWriteRoles),
-        editableAction('attachments', orderWriteRoles),
-        editableAction('shipments', orderWriteRoles),
-        duplicateAction,
+        editableAction('ORDER_NOTE', orderWriteRoles),
+        editableAction('ORDER_SHIPMENTS', orderWriteRoles),
       ],
     },
     {
@@ -227,11 +210,10 @@ export const DEFAULT_ORDER_FLOW: Workflow.WorkflowDefinition = {
       name: 'Partially Delivered',
       type: 'normal',
       editPolicy: [
-        editableAction('note', orderWriteRoles),
-        editableAction('items', orderLimitedEditRoles),
-        editableAction('attachments', orderWriteRoles),
-        editableAction('shipments', orderWriteRoles),
-        duplicateAction,
+        editableAction('ORDER_NOTE', orderWriteRoles),
+        editableAction('ORDER_ITEM_EDIT', orderLimitedEditRoles),
+        editableAction('ORDER_SUB_COMPANY', orderWriteRoles),
+        editableAction('ORDER_SHIPMENTS', orderWriteRoles),
       ],
     },
     {
@@ -239,11 +221,10 @@ export const DEFAULT_ORDER_FLOW: Workflow.WorkflowDefinition = {
       name: 'Partially Delivered Completion Required',
       type: 'normal',
       editPolicy: [
-        editableAction('note', orderWriteRoles),
-        editableAction('items', orderLimitedEditRoles),
-        editableAction('attachments', orderWriteRoles),
-        editableAction('shipments', orderWriteRoles),
-        duplicateAction,
+        editableAction('ORDER_NOTE', orderWriteRoles),
+        editableAction('ORDER_ITEM_EDIT', orderLimitedEditRoles),
+        editableAction('ORDER_SUB_COMPANY', orderWriteRoles),
+        editableAction('ORDER_SHIPMENTS', orderWriteRoles),
       ],
     },
     {
@@ -251,11 +232,10 @@ export const DEFAULT_ORDER_FLOW: Workflow.WorkflowDefinition = {
       name: 'Delivered',
       type: 'normal',
       editPolicy: [
-        editableAction('note', orderWriteRoles),
-        editableAction('items', orderLimitedEditRoles),
-        editableAction('attachments', orderWriteRoles),
-        editableAction('shipments', orderWriteRoles),
-        duplicateAction,
+        editableAction('ORDER_NOTE', orderWriteRoles),
+        editableAction('ORDER_ITEM_EDIT', orderLimitedEditRoles),
+        editableAction('ORDER_SUB_COMPANY', orderWriteRoles),
+        editableAction('ORDER_SHIPMENTS', orderWriteRoles),
       ],
     },
     {
@@ -263,20 +243,21 @@ export const DEFAULT_ORDER_FLOW: Workflow.WorkflowDefinition = {
       name: 'In Revision',
       type: 'normal',
       editPolicy: [
-        editableAction('note', orderWriteRoles),
-        editableAction('deliveryDate', orderWriteRoles),
-        editableAction('supplier', orderWriteRoles),
-        editableAction('items', orderWriteRoles),
-        editableAction('discount', orderWriteRoles),
-        editableAction('attachments', orderWriteRoles),
-        duplicateAction,
+        editableAction('ORDER_NOTE', orderWriteRoles),
+        editableAction('ORDER_DELIVERY_DATE', orderWriteRoles),
+        editableAction('ORDER_SUPPLIER', orderWriteRoles),
+        editableAction('ORDER_ITEM_EDIT', orderWriteRoles),
+        editableAction('ORDER_DISCOUNT', orderWriteRoles),
       ],
     },
     {
       id: 'CANCELLED',
       name: 'Cancelled',
       type: 'final',
-      editPolicy: [editableAction('note', orderWriteRoles), duplicateAction],
+      editPolicy: [
+        editableAction('ORDER_NOTE', orderWriteRoles),
+        editableAction('ORDER_SUB_COMPANY', orderWriteRoles),
+      ],
     },
   ],
   transitions: [

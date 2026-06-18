@@ -1,4 +1,4 @@
-import { Disclosure } from '@foldkit/ui'
+import { Disclosure, Textarea } from '@foldkit/ui'
 import { Array, Effect, Option, Queue, Stream } from 'effect'
 import { Mount } from 'foldkit'
 import { type Document, type Html, html } from 'foldkit/html'
@@ -9,12 +9,16 @@ import {
   ClickedAddedStatus,
   ClickedAppliedDefaultFlow,
   ClickedClosedGraphContextMenu,
+  ClickedClosedWorkflowJsonModal,
+  ClickedCopiedWorkflowExportJson,
   ClickedDeletedStatus,
   ClickedDeletedTransition,
   ClickedHidLeftPanel,
   ClickedMovedTransitionEarlier,
   ClickedMovedTransitionLater,
   ClickedOpenedLeftPanel,
+  ClickedOpenedWorkflowExportModal,
+  ClickedOpenedWorkflowImportModal,
   ClickedPublishedRemoteFlow,
   ClickedRemovedDeliveryAutomation,
   ClickedSavedRemoteFlowDraft,
@@ -41,6 +45,7 @@ import {
   SelectedDeliveryAutomationStatus,
   SelectedStatus,
   SelectedStatusType,
+  SubmittedWorkflowImportJson,
   SuppressedNativeGraphContextMenu,
   UpdatedDeliveryAutomationEnabled,
   UpdatedFlowDocumentType,
@@ -48,9 +53,11 @@ import {
   UpdatedStatusName,
   UpdatedTargetCompanyId,
   UpdatedTransitionAutomationOnly,
+  UpdatedWorkflowImportJson,
 } from '../message'
 import type { Message } from '../message'
 import type { Model } from '../model'
+import { formatWorkflowExportJson } from '../page/workspace/model'
 
 const fallbackCanvasWidth = 1920
 const fallbackCanvasHeight = 1080
@@ -760,7 +767,7 @@ const nodeShape = (model: Model, node: Graph.GraphNode): Html => {
     model.workspace.selectedItemId === node.status.id
 
   return h.g(
-    [],
+    [h.Style({ userSelect: 'none', WebkitUserSelect: 'none' })],
     [
       h.rect(
         [
@@ -786,6 +793,7 @@ const nodeShape = (model: Model, node: Graph.GraphNode): Html => {
           h.Attribute('font-size', '16'),
           h.Attribute('font-weight', '700'),
           h.Attribute('font-family', 'Inter, system-ui, sans-serif'),
+          h.Attribute('user-select', 'none'),
         ],
         [node.status.name],
       ),
@@ -797,6 +805,7 @@ const nodeShape = (model: Model, node: Graph.GraphNode): Html => {
           h.Attribute('font-size', '12'),
           h.Attribute('font-weight', '600'),
           h.Attribute('font-family', 'Inter, system-ui, sans-serif'),
+          h.Attribute('user-select', 'none'),
         ],
         [node.status.type],
       ),
@@ -856,7 +865,8 @@ const graphSvg = (model: Model, size: CanvasSize): Html => {
     [
       h.Attribute('viewBox', `0 0 ${size.width} ${size.height}`),
       h.OnMount(ObserveGraphPointer()),
-      h.Class('block h-full w-full'),
+      h.Style({ userSelect: 'none', WebkitUserSelect: 'none' }),
+      h.Class('block h-full w-full select-none'),
     ],
     [
       h.rect(
@@ -872,6 +882,7 @@ const graphSvg = (model: Model, size: CanvasSize): Html => {
       svgDefs(),
       h.g(
         [
+          h.Style({ userSelect: 'none', WebkitUserSelect: 'none' }),
           h.Attribute(
             'transform',
             `translate(${model.workspace.graphPanX} ${model.workspace.graphPanY}) scale(${model.workspace.graphZoom})`,
@@ -1048,6 +1059,250 @@ const remoteFlowActions = (model: Model): Html => {
             'Publish',
             ClickedPublishedRemoteFlow(),
             'bg-sky-500 text-slate-950 hover:bg-sky-400',
+          ),
+        ],
+      ),
+    ],
+  )
+}
+
+const workflowJsonActions = (): Html => {
+  const h = html<Message>()
+  const buttonClass =
+    'cursor-pointer rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-400'
+
+  return h.section(
+    [h.Class('rounded-xl border border-slate-800 bg-slate-900/70 p-3')],
+    [
+      h.div(
+        [h.Class('text-xs font-medium uppercase tracking-wide text-slate-500')],
+        ['Workflow JSON'],
+      ),
+      h.p(
+        [h.Class('mt-1 text-xs leading-5 text-slate-500')],
+        [
+          'Export this workflow as formatted JSON, or import previously exported JSON into the current workflow.',
+        ],
+      ),
+      h.div(
+        [h.Class('mt-3 grid grid-cols-2 gap-2')],
+        [
+          h.button(
+            [
+              h.Type('button'),
+              h.OnClick(ClickedOpenedWorkflowExportModal()),
+              h.Class(buttonClass),
+            ],
+            ['Export'],
+          ),
+          h.button(
+            [
+              h.Type('button'),
+              h.OnClick(ClickedOpenedWorkflowImportModal()),
+              h.Class(buttonClass),
+            ],
+            ['Import'],
+          ),
+        ],
+      ),
+    ],
+  )
+}
+
+const modalFeedback = (model: Model): Html => {
+  const h = html<Message>()
+
+  if (model.workspace.banner === '') {
+    return h.empty
+  }
+
+  return h.p(
+    [
+      h.Attribute('role', 'status'),
+      h.Class(
+        'rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200',
+      ),
+    ],
+    [model.workspace.banner],
+  )
+}
+
+const workflowJsonModal = (model: Model): Html => {
+  const h = html<Message>()
+  const state = model.workspace.workflowJsonModalState
+
+  if (state._tag === 'WorkflowJsonModalClosed') {
+    return h.empty
+  }
+
+  const isImport = state._tag === 'WorkflowImportJsonModalOpen'
+  const title = isImport ? 'Import workflow JSON' : 'Export workflow JSON'
+  const description = isImport
+    ? 'Paste JSON exported from this app. Importing applies its workflow contents to the current workflow.'
+    : 'This is the full formatted JSON for the current workflow.'
+
+  return h.div(
+    [h.Class('fixed inset-0 z-40 flex items-center justify-center p-4')],
+    [
+      h.div(
+        [
+          h.OnClick(ClickedClosedWorkflowJsonModal()),
+          h.Class('absolute inset-0 bg-slate-950/75 backdrop-blur-sm'),
+        ],
+        [],
+      ),
+      h.section(
+        [
+          h.Attribute('role', 'dialog'),
+          h.Attribute('aria-modal', 'true'),
+          h.Attribute('aria-labelledby', 'workflow-json-modal-title'),
+          h.Class(
+            'relative z-10 flex max-h-[calc(100vh-2rem)] w-[min(64rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 text-slate-100 shadow-2xl shadow-black/50',
+          ),
+        ],
+        [
+          h.div(
+            [
+              h.Class(
+                'flex items-start justify-between gap-4 border-b border-slate-800 px-5 py-4',
+              ),
+            ],
+            [
+              h.div(
+                [h.Class('min-w-0')],
+                [
+                  h.h2(
+                    [
+                      h.Id('workflow-json-modal-title'),
+                      h.Class('text-base font-semibold text-slate-100'),
+                    ],
+                    [title],
+                  ),
+                  h.p(
+                    [h.Class('mt-1 text-sm leading-6 text-slate-500')],
+                    [description],
+                  ),
+                ],
+              ),
+              h.button(
+                [
+                  h.Type('button'),
+                  h.Attribute('aria-label', 'Close workflow JSON modal'),
+                  h.OnClick(ClickedClosedWorkflowJsonModal()),
+                  h.Class(
+                    'cursor-pointer rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400',
+                  ),
+                ],
+                ['Close'],
+              ),
+            ],
+          ),
+          h.div(
+            [h.Class('min-h-0 flex-1 space-y-4 overflow-auto p-5')],
+            [
+              modalFeedback(model),
+              isImport
+                ? importWorkflowJsonForm(state.value)
+                : exportWorkflowJsonView(model),
+            ],
+          ),
+        ],
+      ),
+    ],
+  )
+}
+
+const exportWorkflowJsonView = (model: Model): Html => {
+  const h = html<Message>()
+
+  return h.div(
+    [h.Class('space-y-4')],
+    [
+      h.pre(
+        [
+          h.Attribute('tabindex', '0'),
+          h.Class(
+            'max-h-[60vh] overflow-auto rounded-xl border border-slate-800 bg-slate-900/80 p-4 font-mono text-xs leading-5 text-slate-200',
+          ),
+        ],
+        [formatWorkflowExportJson(model.workspace.workflow)],
+      ),
+      h.div(
+        [h.Class('flex justify-end')],
+        [
+          h.button(
+            [
+              h.Type('button'),
+              h.OnClick(ClickedCopiedWorkflowExportJson()),
+              h.Class(
+                'cursor-pointer rounded-lg bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-300',
+              ),
+            ],
+            ['Copy JSON'],
+          ),
+        ],
+      ),
+    ],
+  )
+}
+
+const importWorkflowJsonForm = (value: string): Html => {
+  const h = html<Message>()
+  const canImport = value.trim() !== ''
+
+  return h.div(
+    [h.Class('space-y-4')],
+    [
+      Textarea.view<Message>({
+        id: 'workflow-import-json',
+        value,
+        rows: 18,
+        placeholder: 'Paste exported workflow JSON here',
+        onInput: value => UpdatedWorkflowImportJson({ value }),
+        toView: attributes =>
+          h.div(
+            [h.Class('space-y-2')],
+            [
+              h.label(
+                [
+                  ...attributes.label,
+                  h.Class(
+                    'text-xs font-medium uppercase tracking-wide text-slate-500',
+                  ),
+                ],
+                ['JSON'],
+              ),
+              h.textarea(
+                [
+                  ...attributes.textarea,
+                  h.Class(
+                    'max-h-[60vh] min-h-80 w-full resize-y rounded-xl border border-slate-800 bg-slate-900/80 p-4 font-mono text-xs leading-5 text-slate-100 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30',
+                  ),
+                ],
+                [],
+              ),
+              h.span(
+                [...attributes.description, h.Class('sr-only')],
+                ['Workflow JSON import input'],
+              ),
+            ],
+          ),
+      }),
+      h.div(
+        [h.Class('flex justify-end')],
+        [
+          h.button(
+            [
+              h.Type('button'),
+              h.OnClick(SubmittedWorkflowImportJson()),
+              ...(canImport ? [] : [h.Disabled(true)]),
+              h.Class(
+                canImport
+                  ? 'cursor-pointer rounded-lg bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-300'
+                  : 'cursor-not-allowed rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-500',
+              ),
+            ],
+            ['Import JSON'],
           ),
         ],
       ),
@@ -1531,6 +1786,7 @@ const leftPanel = (model: Model): Html => {
                 ],
               ),
               remoteFlowActions(model),
+              workflowJsonActions(),
               automations(model),
               flowHistory(model),
             ],
@@ -1724,6 +1980,47 @@ const editableActionDisclosureRow = (
   )
 }
 
+const editableActionGroupDisclosure = (
+  model: Model,
+  status: Workflow.Status,
+  group: Workflow.EditableActionGroup,
+): Html => {
+  const h = html<Message>()
+
+  return h.details(
+    [
+      h.Class('rounded-lg border border-slate-800 bg-slate-900/70 p-2'),
+      h.Attribute('open', 'open'),
+    ],
+    [
+      h.summary(
+        [
+          h.Class(
+            'flex cursor-pointer select-none list-none items-center justify-between gap-3 rounded-md px-2 py-2 text-sm font-semibold text-slate-100 marker:hidden hover:bg-slate-900',
+          ),
+        ],
+        [
+          h.span([h.Class('truncate')], [group.title]),
+          h.span(
+            [
+              h.Class(
+                'shrink-0 rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-400',
+              ),
+            ],
+            [`${group.actions.length}`],
+          ),
+        ],
+      ),
+      h.div(
+        [h.Class('mt-2 space-y-2')],
+        Array.map(group.actions, action =>
+          editableActionDisclosureRow(model, status, action),
+        ),
+      ),
+    ],
+  )
+}
+
 const editableActionsSection = (
   model: Model,
   status: Workflow.Status,
@@ -1732,8 +2029,13 @@ const editableActionsSection = (
   const disclosure =
     model.editableActionsDisclosure ??
     Disclosure.init({ id: 'editable-actions-disclosure' })
-  const editableActions = Workflow.editableActionsForDocumentType(
+  const editableActionGroups = Workflow.editableActionGroupsForDocumentType(
     model.workspace.workflow.documentType,
+  )
+  const editableActionCount = Array.reduce(
+    editableActionGroups,
+    0,
+    (count, group) => count + group.actions.length,
   )
 
   return h.submodel({
@@ -1758,7 +2060,7 @@ const editableActionsSection = (
                           'rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-400',
                         ),
                       ],
-                      [`${editableActions.length}`],
+                      [`${editableActionCount}`],
                     ),
                     chevronIcon(disclosure.isOpen),
                   ],
@@ -1768,8 +2070,8 @@ const editableActionsSection = (
             disclosure.isOpen
               ? h.div(
                   [...attributes.panel, h.Class('space-y-2')],
-                  Array.map(editableActions, action =>
-                    editableActionDisclosureRow(model, status, action),
+                  Array.map(editableActionGroups, group =>
+                    editableActionGroupDisclosure(model, status, group),
                   ),
                 )
               : h.empty,
@@ -2471,7 +2773,7 @@ const canvas = (model: Model): Html => {
                 clientY,
               ),
           ),
-          h.Class('absolute inset-0 z-0'),
+          h.Class('absolute inset-0 z-0 select-none'),
         ],
         [graphSvg(model, size)],
       ),
@@ -2479,6 +2781,7 @@ const canvas = (model: Model): Html => {
       leftPanel(model),
       nodePanel(model),
       graphContextMenu(model),
+      workflowJsonModal(model),
       loadingOverlay(model),
     ],
   )

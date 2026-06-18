@@ -7,6 +7,7 @@ import {
   type Model,
   type SavedWorkspace,
   TransitionDragIdle,
+  WorkflowJsonModalClosed,
 } from './model'
 import { resetModel } from './update'
 
@@ -64,6 +65,7 @@ export const fromSavedWorkspace = ({
     graphPanState: GraphPanIdle(),
     transitionDragState: TransitionDragIdle(),
     graphContextMenuState: GraphContextMenuClosed(),
+    workflowJsonModalState: WorkflowJsonModalClosed(),
     isActionMenuOpen: false,
     isPreviewSaved: false,
     isDirty: false,
