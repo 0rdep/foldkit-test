@@ -10,7 +10,9 @@ import { defaultModel } from './main'
 import {
   ClickedAddedStatus,
   ClickedAppliedDefaultFlow,
+  ClickedAppliedMissingAutomations,
   ClickedDeletedStatus,
+  ClickedDuplicatedStatus,
   ClickedMovedTransitionEarlier,
   ClickedMovedTransitionLater,
   ClickedOpenedWorkflowImportModal,
@@ -28,11 +30,16 @@ import {
   ReleasedGraphCanvasPointer,
   ReleasedTransitionInput,
   SelectedActor,
+  SelectedNamedAutomationSourceStatus,
+  SelectedNamedAutomationTargetStatus,
+  SelectedNamedAutomationType,
   SelectedStatus,
+  SelectedTransitionAutomationType,
   SubmittedWorkflowImportJson,
   SucceededLoadFlowDefinitions,
   SucceededLoadFlowHistory,
   UpdatedFlowDocumentType,
+  UpdatedNamedAutomationEnabled,
   UpdatedTransitionAutomationOnly,
   UpdatedWorkflowImportJson,
 } from './page/workspace/message'
@@ -156,7 +163,7 @@ describe('workflow engine update', () => {
     )
 
     expect(documentStatus(nextModel)).toBe('PENDING_APPROVAL')
-    expect(nextModel.documents[0]?.effectLog[0]?.type).toBe('SendNotification')
+    expect(nextModel.documents[0]?.effectLog).toStrictEqual([])
     expect(commands.length).toBe(1)
   })
 
@@ -171,10 +178,18 @@ describe('workflow engine update', () => {
 
     const editPolicy = status?.editPolicy ?? Workflow.lockedEditPolicy
     expect(
-      Workflow.canRoleEditAction(editPolicy, 'REQUISITION_ITEM_EDIT', 'OrderCreator'),
-    ).toBe(true)
+      Workflow.canRoleEditAction(
+        editPolicy,
+        'REQUISITION_ITEM_EDIT',
+        'OrderCreator',
+      ),
+    ).toBe(false)
     expect(
-      Workflow.canRoleEditAction(editPolicy, 'REQUISITION_DELIVERY_DATE', 'OrderCreator'),
+      Workflow.canRoleEditAction(
+        editPolicy,
+        'REQUISITION_DELIVERY_DATE',
+        'OrderModerator',
+      ),
     ).toBe(true)
   })
 
@@ -195,6 +210,32 @@ describe('workflow engine update', () => {
     expect(
       nextModel.documents[0]?.eventLog.map(event => event.label),
     ).toContain('Maria Manager completed Approved')
+  })
+
+  test('automation-only transitions cannot be requested manually', () => {
+    const model = defaultModel()
+    const workflow = Workflow.updateTransition(
+      model.workflow,
+      'approved-to-closed',
+      transition =>
+        Workflow.Transition.make({
+          ...transition,
+          allowedRoles: ['OrderCreator'],
+          automationOnly: true,
+        }),
+    )
+    const documents = model.documents.map(document =>
+      document.id === model.selectedDocumentId
+        ? { ...document, currentStatusId: 'APPROVED' }
+        : document,
+    )
+    const [blocked] = update(
+      { ...model, workflow, documents },
+      ClickedRequestedTransition({ transitionId: 'approved-to-closed' }),
+    )
+
+    expect(documentStatus(blocked)).toBe('APPROVED')
+    expect(blocked.banner).toBe('Transition is only available to automations')
   })
 
   test('completed save messages do not change model', () => {
@@ -484,7 +525,164 @@ describe('workflow engine update', () => {
     )
 
     expect(transition?.automationOnly).toBe(true)
+    expect(transition?.automationType).toBe('REQUISITION_ALL_ITEMS_LINKED')
     expect(transition?.allowedRoles).toStrictEqual([])
+    expect(commands.length).toBe(1)
+  })
+
+  test('duplicating a status copies attributes with a new id', () => {
+    const model = defaultModel()
+    const source = model.workflow.statuses.find(
+      status => status.id === 'PENDING_APPROVAL',
+    )
+    const [duplicated, commands] = update(
+      model,
+      ClickedDuplicatedStatus({ statusId: 'PENDING_APPROVAL' }),
+    )
+    const copy = duplicated.workflow.statuses.find(
+      status => status.id === `status-${model.nextSequence}`,
+    )
+
+    expect(copy).toBeDefined()
+    expect(copy?.id).not.toBe(source?.id)
+    expect(copy?.name).toBe(source?.name)
+    expect(copy?.type).toBe(source?.type)
+    expect(copy?.editPolicy).toStrictEqual(source?.editPolicy)
+    expect(duplicated.selectedStatusId).toBe(copy?.id)
+    expect(duplicated.selectedItemKind).toBe('Status')
+    expect(duplicated.selectedItemId).toBe(copy?.id)
+    expect(commands.length).toBe(1)
+  })
+
+  test('wrong-document automation types are blocked', () => {
+    const model = defaultModel()
+    const transitionId = 'approved-to-closed'
+    const [blocked, commands] = update(
+      model,
+      SelectedTransitionAutomationType({
+        transitionId,
+        automationType: 'ORDER_DELIVERY_FULLY_DELIVERED',
+      }),
+    )
+    const transition = blocked.workflow.transitions.find(
+      item => item.id === transitionId,
+    )
+
+    expect(transition?.automationType).toBe('REQUISITION_ALL_ITEMS_LINKED')
+    expect(blocked.banner).toBe(
+      'Automation type is not available for this flow type',
+    )
+    expect(commands).toStrictEqual([])
+  })
+
+  test('named automation source and target can be edited and disabled', () => {
+    const model = defaultModel()
+    const automationId = 'approved-to-closed'
+    const findAutomation = (workflow: Workflow.WorkflowDefinition) =>
+      workflow.transitions.find(
+        transition =>
+          transition.id === automationId && transition.automationOnly === true,
+      )
+    const [changedSource, sourceCommands] = update(
+      model,
+      SelectedNamedAutomationSourceStatus({
+        automationId,
+        statusId: 'DRAFT',
+      }),
+    )
+    const [changedTarget, targetCommands] = update(
+      changedSource,
+      SelectedNamedAutomationTargetStatus({
+        automationId,
+        statusId: 'CANCELLED',
+      }),
+    )
+    const [disabled, disabledCommands] = update(
+      changedTarget,
+      UpdatedNamedAutomationEnabled({ automationId, value: false }),
+    )
+    const [enabled, enabledCommands] = update(
+      disabled,
+      UpdatedNamedAutomationEnabled({ automationId, value: true }),
+    )
+
+    expect(findAutomation(changedSource.workflow)?.fromStatusId).toBe('DRAFT')
+    expect(findAutomation(changedTarget.workflow)?.toStatusId).toBe('CANCELLED')
+    expect(findAutomation(disabled.workflow)).toBeUndefined()
+    expect(findAutomation(enabled.workflow)?.toStatusId).toBe('CLOSED')
+    expect(sourceCommands.length).toBe(1)
+    expect(targetCommands.length).toBe(1)
+    expect(disabledCommands.length).toBe(1)
+    expect(enabledCommands.length).toBe(1)
+  })
+
+  test('applying missing named requisition automations converts transitions', () => {
+    const model = defaultModel()
+    const workflow: Workflow.WorkflowDefinition = {
+      ...DEFAULT_REQUISITION_FLOW,
+      transitions: DEFAULT_REQUISITION_FLOW.transitions.map(transition =>
+        transition.id === 'approved-to-closed'
+          ? Workflow.Transition.make({
+              id: transition.id,
+              fromStatusId: transition.fromStatusId,
+              toStatusId: transition.toStatusId,
+              allowedRoles: ['SystemAdmin'],
+              automationOnly: false,
+              effects: transition.effects,
+            })
+          : transition,
+      ),
+    }
+    const [applied, commands] = update(
+      { ...model, workflow },
+      ClickedAppliedMissingAutomations(),
+    )
+    const [reapplied, reappliedCommands] = update(
+      applied,
+      ClickedAppliedMissingAutomations(),
+    )
+    const approvedToClosed = applied.workflow.transitions.find(
+      transition => transition.id === 'approved-to-closed',
+    )
+
+    expect(approvedToClosed?.automationOnly).toBe(true)
+    expect(approvedToClosed?.automationType).toBe(
+      'REQUISITION_ALL_ITEMS_LINKED',
+    )
+    expect(approvedToClosed?.allowedRoles).toStrictEqual([])
+    expect(reapplied.workflow.transitions).toHaveLength(
+      applied.workflow.transitions.length,
+    )
+    expect(commands.length).toBe(1)
+    expect(reappliedCommands).toStrictEqual([])
+  })
+
+  test('applying missing named order automations adds delivery transitions', () => {
+    const model = defaultModel()
+    const workflow: Workflow.WorkflowDefinition = {
+      ...DEFAULT_ORDER_FLOW,
+      transitions: DEFAULT_ORDER_FLOW.transitions.filter(
+        transition => transition.automationOnly !== true,
+      ),
+    }
+    const [applied, commands] = update(
+      {
+        ...model,
+        workflow,
+        selectedFlowDocumentType: 'order',
+      },
+      ClickedAppliedMissingAutomations(),
+    )
+    const deliveryAutomations = applied.workflow.transitions.filter(
+      transition =>
+        transition.automationOnly === true &&
+        transition.automationType?.startsWith('ORDER_DELIVERY_') === true,
+    )
+
+    expect(deliveryAutomations).toHaveLength(6)
+    expect(
+      deliveryAutomations.map(transition => transition.automationType),
+    ).toContain('ORDER_DELIVERY_REOPENED')
     expect(commands.length).toBe(1)
   })
 

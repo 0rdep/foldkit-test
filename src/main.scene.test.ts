@@ -66,6 +66,7 @@ describe('workflow scene', () => {
         },
       ),
       Scene.expect(Scene.role('menu')).toExist(),
+      Scene.expect(Scene.role('button', { name: 'Duplicate' })).toExist(),
       Scene.expect(Scene.role('button', { name: 'Delete' })).toExist(),
       Scene.expect(Scene.role('button', { name: 'Edit' })).toBeAbsent(),
     )
@@ -84,6 +85,7 @@ describe('workflow scene', () => {
         },
       ),
       Scene.expect(Scene.role('button', { name: 'Delete' })).toExist(),
+      Scene.expect(Scene.role('button', { name: 'Duplicate' })).toExist(),
       Scene.pointerDown(Scene.selector('#workflow-graph-background'), {
         button: 2,
         clientX: 520,
@@ -91,6 +93,7 @@ describe('workflow scene', () => {
       }),
       Scene.expect(Scene.role('button', { name: 'Add node' })).toExist(),
       Scene.expect(Scene.role('button', { name: 'Delete' })).toBeAbsent(),
+      Scene.expect(Scene.role('button', { name: 'Duplicate' })).toBeAbsent(),
     )
   })
 
@@ -113,6 +116,7 @@ describe('workflow scene', () => {
         clientY: 260,
       }),
       Scene.expect(Scene.role('button', { name: 'Delete' })).toExist(),
+      Scene.expect(Scene.role('button', { name: 'Duplicate' })).toExist(),
       Scene.expect(Scene.role('button', { name: 'Add node' })).toBeAbsent(),
     )
   })
@@ -207,7 +211,7 @@ describe('workflow scene', () => {
       Scene.Command.expectHas(SaveWorkspace),
       Scene.expect(
         Scene.role('button', { name: 'Edit items: OrderCreator' }),
-      ).toHaveAttr('aria-pressed', 'false'),
+      ).toHaveAttr('aria-pressed', 'true'),
       Scene.Command.resolve(SaveWorkspace, CompletedSaveWorkspace()),
     )
   })

@@ -10,6 +10,7 @@ import {
   ClickedClosedGraphContextMenu,
   ClickedDeletedStatus,
   ClickedDeletedTransition,
+  ClickedDuplicatedStatus,
   ClickedLoadedRemoteFlowDefinitions,
   ClickedPublishedRemoteFlow,
   ClickedResetGraphViewport,
@@ -1235,6 +1236,13 @@ const graphContextMenu = (model: Model): Html => {
             h.Class(clsx(menuClass, 'pointer-events-auto')),
           ],
           [
+            uiButton({
+              onClick: ClickedDuplicatedStatus({
+                statusId: menuState.statusId,
+              }),
+              className: contextMenuButtonClass,
+              children: ['Duplicate'],
+            }),
             uiButton({
               onClick: ClickedDeletedStatus({ statusId: menuState.statusId }),
               isDisabled: isInitialStatus,

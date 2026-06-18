@@ -40,6 +40,88 @@ export const AutomationType = S.Literals([
 ])
 export type AutomationType = typeof AutomationType.Type
 
+export type NamedAutomationDefinition = Readonly<{
+  id: string
+  fromStatusId: string
+  defaultToStatusId: string
+  automationType: AutomationType
+}>
+
+export const requisitionNamedAutomationDefinitions: ReadonlyArray<NamedAutomationDefinition> =
+  [
+    {
+      id: 'approved-to-closed',
+      fromStatusId: 'APPROVED',
+      defaultToStatusId: 'CLOSED',
+      automationType: 'REQUISITION_ALL_ITEMS_LINKED',
+    },
+  ]
+
+export const orderNamedAutomationDefinitions: ReadonlyArray<NamedAutomationDefinition> =
+  [
+    {
+      id: 'awaiting-delivery-to-delivered',
+      fromStatusId: 'AWAITING_DELIVERY',
+      defaultToStatusId: 'DELIVERED',
+      automationType: 'ORDER_DELIVERY_FULLY_DELIVERED',
+    },
+    {
+      id: 'awaiting-delivery-to-partially-delivered',
+      fromStatusId: 'AWAITING_DELIVERY',
+      defaultToStatusId: 'PARTIALLY_DELIVERED',
+      automationType: 'ORDER_DELIVERY_PARTIALLY_DELIVERED',
+    },
+    {
+      id: 'awaiting-delivery-to-partially-delivered-completion-required',
+      fromStatusId: 'AWAITING_DELIVERY',
+      defaultToStatusId: 'PARTIALLY_DELIVERED_COMPLETION_REQUIRED',
+      automationType: 'ORDER_DELIVERY_PARTIALLY_DELIVERED_COMPLETION_REQUIRED',
+    },
+    {
+      id: 'partially-delivered-to-delivered',
+      fromStatusId: 'PARTIALLY_DELIVERED',
+      defaultToStatusId: 'DELIVERED',
+      automationType: 'ORDER_DELIVERY_FULLY_DELIVERED',
+    },
+    {
+      id: 'partially-delivered-completion-required-to-delivered',
+      fromStatusId: 'PARTIALLY_DELIVERED_COMPLETION_REQUIRED',
+      defaultToStatusId: 'DELIVERED',
+      automationType: 'ORDER_DELIVERY_FULLY_DELIVERED',
+    },
+    {
+      id: 'delivered-to-partially-delivered',
+      fromStatusId: 'DELIVERED',
+      defaultToStatusId: 'PARTIALLY_DELIVERED',
+      automationType: 'ORDER_DELIVERY_REOPENED',
+    },
+  ]
+
+export const namedAutomationDefinitionsForDocumentType = (
+  documentType: string,
+): ReadonlyArray<NamedAutomationDefinition> =>
+  String.toLowerCase(documentType) === 'order'
+    ? orderNamedAutomationDefinitions
+    : requisitionNamedAutomationDefinitions
+
+export const automationTypesForDocumentType = (
+  documentType: string,
+): ReadonlyArray<AutomationType> =>
+  Array.reduce(
+    namedAutomationDefinitionsForDocumentType(documentType),
+    [] as ReadonlyArray<AutomationType>,
+    (types, definition) =>
+      Array.contains(types, definition.automationType)
+        ? types
+        : [...types, definition.automationType],
+  )
+
+export const isAutomationTypeForDocumentType = (
+  documentType: string,
+  automationType: AutomationType,
+): boolean =>
+  Array.contains(automationTypesForDocumentType(documentType), automationType)
+
 export const EditableActionDefinition = S.Struct({
   action: EditableAction,
   allowedRoles: S.Array(S.String),
@@ -75,19 +157,19 @@ export type EffectDefinition = typeof EffectDefinition.Type
 export const Transition = S.Struct({
   id: S.String,
   fromStatusId: S.String,
-	toStatusId: S.String,
-	allowedRoles: S.Array(S.String),
-	automationOnly: S.optional(S.Boolean),
-	automationType: S.optional(AutomationType),
-	effects: S.Array(EffectDefinition),
+  toStatusId: S.String,
+  allowedRoles: S.Array(S.String),
+  automationOnly: S.optional(S.Boolean),
+  automationType: S.optional(AutomationType),
+  effects: S.Array(EffectDefinition),
 })
 export type Transition = typeof Transition.Type
 
 export const DeliveryAutomation = S.Struct({
-	enabled: S.Boolean,
-	fullyDeliveredStatusId: S.String,
-	partiallyDeliveredStatusId: S.String,
-	partiallyDeliveredCompletionRequiredStatusId: S.String,
+  enabled: S.Boolean,
+  fullyDeliveredStatusId: S.String,
+  partiallyDeliveredStatusId: S.String,
+  partiallyDeliveredCompletionRequiredStatusId: S.String,
 })
 export type DeliveryAutomation = typeof DeliveryAutomation.Type
 
@@ -98,9 +180,9 @@ export const WorkflowDefinition = S.Struct({
   version: S.Number,
   state: S.optional(FlowDefinitionState),
   initialStatusId: S.String,
-	statuses: S.Array(Status),
-	transitions: S.Array(Transition),
-	deliveryAutomation: S.optional(DeliveryAutomation),
+  statuses: S.Array(Status),
+  transitions: S.Array(Transition),
+  deliveryAutomation: S.optional(DeliveryAutomation),
 })
 export type WorkflowDefinition = typeof WorkflowDefinition.Type
 
@@ -191,20 +273,21 @@ export type EditableActionGroup = Readonly<{
   actions: ReadonlyArray<EditableAction>
 }>
 
-export const requisitionEditableActionGroups: ReadonlyArray<EditableActionGroup> = [
-  {
-    title: 'Requisition',
-    actions: [
-      'REQUISITION_NOTE',
-      'REQUISITION_DELIVERY_DATE',
-      'REQUISITION_DISCOUNT',
-      'REQUISITION_ATTACHMENTS',
-      'REQUISITION_DELETE',
-      'REQUISITION_CREATE_ORDER',
-    ],
-  },
-  { title: 'Requisition item', actions: ['REQUISITION_ITEM_EDIT'] },
-]
+export const requisitionEditableActionGroups: ReadonlyArray<EditableActionGroup> =
+  [
+    {
+      title: 'Requisition',
+      actions: [
+        'REQUISITION_NOTE',
+        'REQUISITION_DELIVERY_DATE',
+        'REQUISITION_DISCOUNT',
+        'REQUISITION_ATTACHMENTS',
+        'REQUISITION_DELETE',
+        'REQUISITION_CREATE_ORDER',
+      ],
+    },
+    { title: 'Requisition item', actions: ['REQUISITION_ITEM_EDIT'] },
+  ]
 
 export const orderEditableActionGroups: ReadonlyArray<EditableActionGroup> = [
   {
@@ -223,11 +306,12 @@ export const orderEditableActionGroups: ReadonlyArray<EditableActionGroup> = [
 ]
 
 export const requisitionEditableActions: ReadonlyArray<EditableAction> =
-  Array.flatten(Array.map(requisitionEditableActionGroups, group => group.actions))
+  Array.flatten(
+    Array.map(requisitionEditableActionGroups, group => group.actions),
+  )
 
-export const orderEditableActions: ReadonlyArray<EditableAction> = Array.flatten(
-  Array.map(orderEditableActionGroups, group => group.actions),
-)
+export const orderEditableActions: ReadonlyArray<EditableAction> =
+  Array.flatten(Array.map(orderEditableActionGroups, group => group.actions))
 
 export const editableActionGroupsForDocumentType = (
   documentType: string,
@@ -502,7 +586,9 @@ export const runtimeState = (
 
   const outgoingTransitions = Array.filter(
     workflow.transitions,
-    transition => transition.fromStatusId === document.currentStatusId,
+    transition =>
+      transition.fromStatusId === document.currentStatusId &&
+      transition.automationOnly !== true,
   )
 
   const availableTransitions = pipe(
@@ -624,6 +710,15 @@ export const requestTransition = (
         }
       }
 
+      if (transition.automationOnly === true) {
+        return {
+          document,
+          result: 'blocked',
+          message: 'Transition is only available to automations',
+          emittedEffects: [],
+        }
+      }
+
       if (!canActorExecuteTransition(actor, transition)) {
         return {
           document,
@@ -680,9 +775,12 @@ export const validateWorkflow = (
     workflow.transitions,
     Array.flatMap(transition => [
       ...Array.match(transition.allowedRoles, {
-        onEmpty: () => [
-          `${transitionLabel(workflow, transition)} has no execution roles`,
-        ],
+        onEmpty: () =>
+          transition.automationOnly === true
+            ? []
+            : [
+                `${transitionLabel(workflow, transition)} has no execution roles`,
+              ],
         onNonEmpty: () => [],
       }),
       ...Option.match(findStatus(workflow, transition.fromStatusId), {

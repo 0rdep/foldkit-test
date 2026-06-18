@@ -165,14 +165,6 @@ export const DEFAULT_REQUISITION_FLOW: Workflow.WorkflowDefinition = {
       automationType: 'REQUISITION_ALL_ITEMS_LINKED',
     }),
     transitionDefinition({
-      id: 'closed-to-approved',
-      fromStatusId: 'CLOSED',
-      toStatusId: 'APPROVED',
-      allowedRoles: [],
-      automationOnly: true,
-      automationType: 'REQUISITION_ITEM_UNLINKED',
-    }),
-    transitionDefinition({
       id: 'rejected-to-pending-approval',
       fromStatusId: 'REJECTED',
       toStatusId: 'PENDING_APPROVAL',

@@ -8,11 +8,13 @@ import {
   ClickedAddedDeliveryAutomation,
   ClickedAddedStatus,
   ClickedAppliedDefaultFlow,
+  ClickedAppliedMissingAutomations,
   ClickedClosedGraphContextMenu,
   ClickedClosedWorkflowJsonModal,
   ClickedCopiedWorkflowExportJson,
   ClickedDeletedStatus,
   ClickedDeletedTransition,
+  ClickedDuplicatedStatus,
   ClickedHidLeftPanel,
   ClickedMovedTransitionEarlier,
   ClickedMovedTransitionLater,
@@ -43,13 +45,17 @@ import {
   ReleasedGraphClientPointer,
   ScrolledCanvas,
   SelectedDeliveryAutomationStatus,
-  SelectedTransitionAutomationType,
+  SelectedNamedAutomationSourceStatus,
+  SelectedNamedAutomationTargetStatus,
+  SelectedNamedAutomationType,
   SelectedStatus,
   SelectedStatusType,
+  SelectedTransitionAutomationType,
   SubmittedWorkflowImportJson,
   SuppressedNativeGraphContextMenu,
   UpdatedDeliveryAutomationEnabled,
   UpdatedFlowDocumentType,
+  UpdatedNamedAutomationEnabled,
   UpdatedStatusId,
   UpdatedStatusName,
   UpdatedTargetCompanyId,
@@ -92,15 +98,6 @@ const transitionRoleIds: ReadonlyArray<string> = [
   'ClientUser',
 ]
 
-const transitionAutomationTypes: ReadonlyArray<Workflow.AutomationType> = [
-  'REQUISITION_ALL_ITEMS_LINKED',
-  'REQUISITION_ITEM_UNLINKED',
-  'ORDER_DELIVERY_FULLY_DELIVERED',
-  'ORDER_DELIVERY_PARTIALLY_DELIVERED',
-  'ORDER_DELIVERY_PARTIALLY_DELIVERED_COMPLETION_REQUIRED',
-  'ORDER_DELIVERY_REOPENED',
-]
-
 const transitionAutomationTypeLabel = (
   automationType: Workflow.AutomationType,
 ): string =>
@@ -111,10 +108,45 @@ const transitionAutomationTypeLabel = (
     .join(' ')
 
 const transitionAutomationTypeFromValue = (
+  documentType: string,
   value: string,
 ): Workflow.AutomationType =>
-  transitionAutomationTypes.find(automationType => automationType === value) ??
-  'ORDER_DELIVERY_FULLY_DELIVERED'
+  Workflow.automationTypesForDocumentType(documentType).find(
+    automationType => automationType === value,
+  ) ??
+  Workflow.automationTypesForDocumentType(documentType)[0] ??
+  'REQUISITION_ALL_ITEMS_LINKED'
+
+const namedAutomationTransitionForDefinition = (
+  workflow: Model['workspace']['workflow'],
+  definition: Workflow.NamedAutomationDefinition,
+): Workflow.Transition | undefined => {
+  const transitionById = workflow.transitions.find(
+    transition =>
+      transition.id === definition.id && transition.automationOnly === true,
+  )
+
+  if (transitionById !== undefined) {
+    return transitionById
+  }
+
+  return workflow.transitions.find(
+    transition =>
+      transition.fromStatusId === definition.fromStatusId &&
+      transition.automationOnly === true &&
+      transition.automationType === definition.automationType,
+  )
+}
+
+const namedAutomationTransitionCount = (
+  workflow: Model['workspace']['workflow'],
+): number =>
+  Array.filter(
+    Workflow.namedAutomationDefinitionsForDocumentType(workflow.documentType),
+    definition =>
+      namedAutomationTransitionForDefinition(workflow, definition) !==
+      undefined,
+  ).length
 
 type Point = Readonly<{ x: number; y: number }>
 type CubicSegment = Readonly<{
@@ -1335,6 +1367,280 @@ const importWorkflowJsonForm = (value: string): Html => {
   )
 }
 
+const namedAutomationTargetValue = (
+  workflow: Model['workspace']['workflow'],
+  definition: Workflow.NamedAutomationDefinition,
+  transition: Workflow.Transition | undefined,
+): string => {
+  if (transition !== undefined) {
+    return transition.toStatusId
+  }
+
+  return Option.isSome(
+    Workflow.findStatus(workflow, definition.defaultToStatusId),
+  )
+    ? definition.defaultToStatusId
+    : (workflow.statuses[0]?.id ?? definition.defaultToStatusId)
+}
+
+const namedAutomationSourceValue = (
+  workflow: Model['workspace']['workflow'],
+  definition: Workflow.NamedAutomationDefinition,
+  transition: Workflow.Transition | undefined,
+): string => {
+  if (transition !== undefined) {
+    return transition.fromStatusId
+  }
+
+  return Option.isSome(Workflow.findStatus(workflow, definition.fromStatusId))
+    ? definition.fromStatusId
+    : (workflow.statuses[0]?.id ?? definition.fromStatusId)
+}
+
+const namedAutomationEditor = (
+  model: Model,
+  definition: Workflow.NamedAutomationDefinition,
+): Html => {
+  const h = html<Message>()
+  const workflow = model.workspace.workflow
+  const transition = namedAutomationTransitionForDefinition(
+    workflow,
+    definition,
+  )
+  const isEnabled = transition !== undefined
+  const sourceValue = namedAutomationSourceValue(
+    workflow,
+    definition,
+    transition,
+  )
+  const targetValue = namedAutomationTargetValue(
+    workflow,
+    definition,
+    transition,
+  )
+  const automationTypes = Workflow.automationTypesForDocumentType(
+    workflow.documentType,
+  )
+  const automationType = transition?.automationType ?? definition.automationType
+  const canEditStatus = !Array.isReadonlyArrayEmpty(workflow.statuses)
+  const hasSourceStatus = Option.isSome(
+    Workflow.findStatus(workflow, sourceValue),
+  )
+  const hasSelectedStatus = Option.isSome(
+    Workflow.findStatus(workflow, targetValue),
+  )
+  const hasAutomationType = Array.contains(automationTypes, automationType)
+  const label = transitionAutomationTypeLabel(automationType)
+
+  return h.article(
+    [
+      h.Class(
+        isEnabled
+          ? 'space-y-3 rounded-xl border border-emerald-400/30 bg-emerald-400/5 p-3'
+          : 'space-y-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3',
+      ),
+    ],
+    [
+      h.label(
+        [h.Class('flex cursor-pointer items-start gap-3')],
+        [
+          h.input([
+            h.Type('checkbox'),
+            h.Checked(isEnabled),
+            ...(!isEnabled && !hasSourceStatus ? [h.Disabled(true)] : []),
+            h.OnClick(
+              UpdatedNamedAutomationEnabled({
+                automationId: definition.id,
+                value: !isEnabled,
+              }),
+            ),
+            h.Class(
+              'mt-0.5 h-4 w-4 cursor-pointer rounded border-slate-700 bg-slate-950',
+            ),
+          ]),
+          h.span(
+            [h.Class('min-w-0 flex-1')],
+            [
+              h.span(
+                [h.Class('block text-sm font-semibold text-slate-100')],
+                [label],
+              ),
+              h.span(
+                [h.Class('mt-1 block text-xs leading-5 text-slate-500')],
+                [
+                  'Configure source status, automation type, and target status.',
+                ],
+              ),
+            ],
+          ),
+          h.span(
+            [
+              h.Class(
+                isEnabled
+                  ? 'shrink-0 rounded-full bg-emerald-400/15 px-2 py-0.5 text-xs font-medium text-emerald-100'
+                  : 'shrink-0 rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-400',
+              ),
+            ],
+            [isEnabled ? 'Enabled' : 'Disabled'],
+          ),
+        ],
+      ),
+      h.label(
+        [h.Class('block')],
+        [
+          h.div(
+            [
+              h.Class(
+                'text-xs font-medium uppercase tracking-wide text-slate-500',
+              ),
+            ],
+            ['Source status'],
+          ),
+          h.select(
+            [
+              h.Value(sourceValue),
+              ...(!canEditStatus ? [h.Disabled(true)] : []),
+              h.OnChange(statusId =>
+                SelectedNamedAutomationSourceStatus({
+                  automationId: definition.id,
+                  statusId,
+                }),
+              ),
+              h.Class(
+                canEditStatus
+                  ? 'mt-2 w-full cursor-pointer rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-100 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30'
+                  : 'mt-2 w-full cursor-not-allowed rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-500',
+              ),
+            ],
+            [
+              ...(hasSourceStatus
+                ? []
+                : [
+                    h.option(
+                      [
+                        h.Value(sourceValue),
+                        h.Selected(true),
+                        h.Disabled(true),
+                      ],
+                      [`Missing status (${sourceValue})`],
+                    ),
+                  ]),
+              ...Array.map(workflow.statuses, status =>
+                h.option(
+                  [h.Value(status.id), h.Selected(status.id === sourceValue)],
+                  [`${status.name} (${status.id})`],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+      h.label(
+        [h.Class('block')],
+        [
+          h.div(
+            [
+              h.Class(
+                'text-xs font-medium uppercase tracking-wide text-slate-500',
+              ),
+            ],
+            ['Automation type'],
+          ),
+          h.select(
+            [
+              h.Value(automationType),
+              h.OnChange(value =>
+                SelectedNamedAutomationType({
+                  automationId: definition.id,
+                  automationType: transitionAutomationTypeFromValue(
+                    workflow.documentType,
+                    value,
+                  ),
+                }),
+              ),
+              h.Class(
+                'mt-2 w-full cursor-pointer rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-100 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30',
+              ),
+            ],
+            [
+              ...(hasAutomationType
+                ? []
+                : [
+                    h.option(
+                      [
+                        h.Value(automationType),
+                        h.Selected(true),
+                        h.Disabled(true),
+                      ],
+                      [
+                        `${transitionAutomationTypeLabel(automationType)} (not available for this flow type)`,
+                      ],
+                    ),
+                  ]),
+              ...Array.map(automationTypes, option =>
+                h.option(
+                  [h.Value(option), h.Selected(option === automationType)],
+                  [transitionAutomationTypeLabel(option)],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+      h.label(
+        [h.Class('block')],
+        [
+          h.div(
+            [
+              h.Class(
+                'text-xs font-medium uppercase tracking-wide text-slate-500',
+              ),
+            ],
+            ['Target status'],
+          ),
+          h.select(
+            [
+              h.Value(targetValue),
+              ...(!canEditStatus ? [h.Disabled(true)] : []),
+              h.OnChange(statusId =>
+                SelectedNamedAutomationTargetStatus({
+                  automationId: definition.id,
+                  statusId,
+                }),
+              ),
+              h.Class(
+                canEditStatus
+                  ? 'mt-2 w-full cursor-pointer rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-100 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30'
+                  : 'mt-2 w-full cursor-not-allowed rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-500',
+              ),
+            ],
+            [
+              ...(hasSelectedStatus
+                ? []
+                : [
+                    h.option(
+                      [
+                        h.Value(targetValue),
+                        h.Selected(true),
+                        h.Disabled(true),
+                      ],
+                      [`Missing status (${targetValue})`],
+                    ),
+                  ]),
+              ...Array.map(workflow.statuses, status =>
+                h.option(
+                  [h.Value(status.id), h.Selected(status.id === targetValue)],
+                  [`${status.name} (${status.id})`],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ],
+  )
+}
+
 const deliveryAutomationStatusSelect = (
   model: Model,
   label: string,
@@ -1540,8 +1846,17 @@ const automations = (model: Model): Html => {
     model.automationsDisclosure ??
     Disclosure.init({ id: 'automations-disclosure' })
   const automation = model.workspace.workflow.deliveryAutomation
-  const canAddDeliveryAutomation =
-    model.workspace.selectedFlowDocumentType === 'order'
+  const namedAutomationDefinitions =
+    Workflow.namedAutomationDefinitionsForDocumentType(
+      model.workspace.workflow.documentType,
+    )
+  const isOrderFlow =
+    model.workspace.workflow.documentType.toLowerCase() === 'order'
+  const namedAutomationCount = namedAutomationTransitionCount(
+    model.workspace.workflow,
+  )
+  const automationCount =
+    namedAutomationCount + (isOrderFlow && automation !== undefined ? 1 : 0)
 
   return h.submodel({
     slotId: 'automations-disclosure',
@@ -1565,7 +1880,7 @@ const automations = (model: Model): Html => {
                           'rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-400',
                         ),
                       ],
-                      [automation === undefined ? '0' : '1'],
+                      [`${automationCount}`],
                     ),
                     chevronIcon(disclosure.isOpen),
                   ],
@@ -1576,40 +1891,96 @@ const automations = (model: Model): Html => {
               ? h.div(
                   [...attributes.panel, h.Class('space-y-3')],
                   [
-                    automation === undefined
-                      ? h.div(
+                    h.div(
+                      [
+                        h.Class(
+                          'space-y-3 rounded-xl border border-slate-800 bg-slate-900/70 p-3',
+                        ),
+                      ],
+                      [
+                        h.div(
+                          [h.Class('flex items-start justify-between gap-3')],
                           [
-                            h.Class(
-                              'space-y-3 rounded-xl border border-dashed border-slate-800 p-4',
-                            ),
-                          ],
-                          [
-                            h.p(
-                              [h.Class('text-sm text-slate-400')],
+                            h.div(
+                              [h.Class('min-w-0')],
                               [
-                                canAddDeliveryAutomation
-                                  ? 'No automations are configured for this flow.'
-                                  : 'Delivery automation is available for order flows.',
-                              ],
-                            ),
-                            h.button(
-                              [
-                                h.Type('button'),
-                                h.OnClick(ClickedAddedDeliveryAutomation()),
-                                ...(!canAddDeliveryAutomation
-                                  ? [h.Disabled(true)]
-                                  : []),
-                                h.Class(
-                                  canAddDeliveryAutomation
-                                    ? 'w-full cursor-pointer rounded-lg bg-sky-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-300'
-                                    : 'w-full cursor-not-allowed rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-600',
+                                h.h3(
+                                  [
+                                    h.Class(
+                                      'text-sm font-semibold text-slate-100',
+                                    ),
+                                  ],
+                                  ['Named automation transitions'],
+                                ),
+                                h.p(
+                                  [
+                                    h.Class(
+                                      'mt-1 text-xs leading-5 text-slate-500',
+                                    ),
+                                  ],
+                                  [
+                                    'Enable named automation transitions and choose their target statuses for this flow type.',
+                                  ],
                                 ),
                               ],
-                              ['Add delivery automation'],
+                            ),
+                            h.span(
+                              [
+                                h.Class(
+                                  'shrink-0 rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-400',
+                                ),
+                              ],
+                              [`${namedAutomationCount}`],
                             ),
                           ],
-                        )
-                      : deliveryAutomationEditor(model, automation),
+                        ),
+                        h.button(
+                          [
+                            h.Type('button'),
+                            h.OnClick(ClickedAppliedMissingAutomations()),
+                            h.Class(
+                              'w-full cursor-pointer rounded-lg border border-sky-400/50 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20 focus:outline-none focus:ring-2 focus:ring-sky-300',
+                            ),
+                          ],
+                          ['Apply missing named automations'],
+                        ),
+                        h.div(
+                          [h.Class('space-y-2')],
+                          Array.map(namedAutomationDefinitions, definition =>
+                            namedAutomationEditor(model, definition),
+                          ),
+                        ),
+                      ],
+                    ),
+                    !isOrderFlow
+                      ? h.empty
+                      : automation === undefined
+                        ? h.div(
+                            [
+                              h.Class(
+                                'space-y-3 rounded-xl border border-dashed border-slate-800 p-4',
+                              ),
+                            ],
+                            [
+                              h.p(
+                                [h.Class('text-sm text-slate-400')],
+                                [
+                                  'No delivery automation block is configured for this flow.',
+                                ],
+                              ),
+                              h.button(
+                                [
+                                  h.Type('button'),
+                                  h.OnClick(ClickedAddedDeliveryAutomation()),
+                                  h.Class(
+                                    'w-full cursor-pointer rounded-lg bg-sky-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-300',
+                                  ),
+                                ],
+                                ['Add delivery automation'],
+                              ),
+                            ],
+                          )
+                        : deliveryAutomationEditor(model, automation),
                   ],
                 )
               : h.empty,
@@ -2253,6 +2624,7 @@ const transitionAutomationToggle = (transition: Workflow.Transition): Html => {
 }
 
 const transitionAutomationTypeSelect = (
+  workflow: Workflow.WorkflowDefinition,
   transition: Workflow.Transition,
 ): Html => {
   const h = html<Message>()
@@ -2261,7 +2633,14 @@ const transitionAutomationTypeSelect = (
     return h.empty
   }
 
-  const value = transition.automationType ?? 'ORDER_DELIVERY_FULLY_DELIVERED'
+  const automationTypes = Workflow.automationTypesForDocumentType(
+    workflow.documentType,
+  )
+  const value =
+    transition.automationType ??
+    automationTypes[0] ??
+    'REQUISITION_ALL_ITEMS_LINKED'
+  const hasAvailableValue = Array.contains(automationTypes, value)
 
   return h.label(
     [h.Class('block rounded-xl border border-slate-800 bg-slate-950/70 p-3')],
@@ -2276,19 +2655,34 @@ const transitionAutomationTypeSelect = (
           h.OnChange(value =>
             SelectedTransitionAutomationType({
               transitionId: transition.id,
-              automationType: transitionAutomationTypeFromValue(value),
+              automationType: transitionAutomationTypeFromValue(
+                workflow.documentType,
+                value,
+              ),
             }),
           ),
           h.Class(
             'mt-2 w-full cursor-pointer rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-100 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30',
           ),
         ],
-        Array.map(transitionAutomationTypes, automationType =>
-          h.option(
-            [h.Value(automationType), h.Selected(automationType === value)],
-            [transitionAutomationTypeLabel(automationType)],
+        [
+          ...(hasAvailableValue
+            ? []
+            : [
+                h.option(
+                  [h.Value(value), h.Selected(true), h.Disabled(true)],
+                  [
+                    `${transitionAutomationTypeLabel(value)} (not available for this flow type)`,
+                  ],
+                ),
+              ]),
+          ...Array.map(automationTypes, automationType =>
+            h.option(
+              [h.Value(automationType), h.Selected(automationType === value)],
+              [transitionAutomationTypeLabel(automationType)],
+            ),
           ),
-        ),
+        ],
       ),
     ],
   )
@@ -2373,7 +2767,10 @@ const transitionEditor = (
                   [
                     transitionOrderControls(model, transition),
                     transitionAutomationToggle(transition),
-                    transitionAutomationTypeSelect(transition),
+                    transitionAutomationTypeSelect(
+                      model.workspace.workflow,
+                      transition,
+                    ),
                     h.div(
                       [
                         h.Class(
@@ -2712,6 +3109,10 @@ const graphContextMenu = (model: Model): Html => {
       ? [contextMenuButton('Add node', ClickedAddedStatus())]
       : state._tag === 'GraphNodeContextMenu'
         ? [
+            contextMenuButton(
+              'Duplicate node',
+              ClickedDuplicatedStatus({ statusId: state.statusId }),
+            ),
             contextMenuButton(
               'Delete node',
               ClickedDeletedStatus({ statusId: state.statusId }),

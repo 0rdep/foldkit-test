@@ -43,6 +43,14 @@ const withUpdateReturn = M.withReturnType<UpdateReturn>()
 const minGraphZoom = 0.45
 const maxGraphZoom = 1.8
 const graphZoomStep = 0.15
+
+type NamedAutomationResult = Readonly<{
+  workflow: Workflow.WorkflowDefinition
+  addedCount: number
+  convertedCount: number
+  skippedCount: number
+}>
+
 const commandResultMessageTags: ReadonlyArray<string> = [
   'CompletedSaveWorkspace',
   'SucceededLoadFlowDefinitions',
@@ -163,6 +171,470 @@ const flowDocumentTypeFromWorkflow = (
 ): FlowDocumentType =>
   workflow.documentType.toLowerCase() === 'order' ? 'order' : 'requisition'
 
+const namedAutomationSpecsForWorkflow = (
+  workflow: Workflow.WorkflowDefinition,
+): ReadonlyArray<Workflow.NamedAutomationDefinition> =>
+  Workflow.namedAutomationDefinitionsForDocumentType(
+    flowDocumentTypeFromWorkflow(workflow),
+  )
+
+const findNamedAutomationSpec = (
+  workflow: Workflow.WorkflowDefinition,
+  automationId: string,
+): Option.Option<Workflow.NamedAutomationDefinition> =>
+  pipe(
+    namedAutomationSpecsForWorkflow(workflow),
+    Array.findFirst(definition => definition.id === automationId),
+  )
+
+const findNamedAutomationTransition = (
+  workflow: Workflow.WorkflowDefinition,
+  spec: Workflow.NamedAutomationDefinition,
+): Option.Option<Workflow.Transition> => {
+  const transitionById = workflow.transitions.find(
+    transition =>
+      transition.id === spec.id && transition.automationOnly === true,
+  )
+
+  if (transitionById !== undefined) {
+    return Option.some(transitionById)
+  }
+
+  return pipe(
+    workflow.transitions,
+    Array.findFirst(
+      transition =>
+        transition.fromStatusId === spec.fromStatusId &&
+        transition.automationOnly === true &&
+        transition.automationType === spec.automationType,
+    ),
+  )
+}
+
+const uniqueTransitionId = (
+  transitions: ReadonlyArray<Workflow.Transition>,
+  baseId: string,
+  index = 1,
+): string => {
+  const candidate = index === 1 ? baseId : `${baseId}-${index}`
+
+  return Array.some(transitions, transition => transition.id === candidate)
+    ? uniqueTransitionId(transitions, baseId, index + 1)
+    : candidate
+}
+
+const automationTransition = (
+  transition: Workflow.Transition,
+  automationType: Workflow.AutomationType,
+): Workflow.Transition =>
+  Workflow.Transition.make({
+    id: transition.id,
+    fromStatusId: transition.fromStatusId,
+    toStatusId: transition.toStatusId,
+    allowedRoles: [],
+    automationOnly: true,
+    automationType,
+    effects: transition.effects,
+  })
+
+const isNamedAutomationTransition = (
+  transition: Workflow.Transition,
+  spec: Workflow.NamedAutomationDefinition,
+): boolean =>
+  transition.automationOnly === true &&
+  (transition.id === spec.id ||
+    (transition.fromStatusId === spec.fromStatusId &&
+      transition.automationType === spec.automationType))
+
+const sourceStatusIdForSpec = (
+  workflow: Workflow.WorkflowDefinition,
+  spec: Workflow.NamedAutomationDefinition,
+): string =>
+  Option.isSome(Workflow.findStatus(workflow, spec.fromStatusId))
+    ? spec.fromStatusId
+    : (workflow.statuses[0]?.id ?? '')
+
+const targetStatusIdForSpec = (
+  workflow: Workflow.WorkflowDefinition,
+  spec: Workflow.NamedAutomationDefinition,
+): string =>
+  Option.isSome(Workflow.findStatus(workflow, spec.defaultToStatusId))
+    ? spec.defaultToStatusId
+    : (workflow.statuses[0]?.id ?? '')
+
+const namedAutomationTransition = (
+  transitions: ReadonlyArray<Workflow.Transition>,
+  spec: Workflow.NamedAutomationDefinition,
+  fromStatusId: string,
+  toStatusId: string,
+  automationType: Workflow.AutomationType,
+): Workflow.Transition =>
+  Workflow.Transition.make({
+    id: uniqueTransitionId(transitions, spec.id),
+    fromStatusId,
+    toStatusId,
+    allowedRoles: [],
+    automationOnly: true,
+    automationType,
+    effects: [],
+  })
+
+const enableNamedAutomation = (
+  workflow: Workflow.WorkflowDefinition,
+  spec: Workflow.NamedAutomationDefinition,
+): Option.Option<Workflow.WorkflowDefinition> => {
+  const fromStatusId = sourceStatusIdForSpec(workflow, spec)
+  const toStatusId = targetStatusIdForSpec(workflow, spec)
+
+  if (
+    Option.isNone(Workflow.findStatus(workflow, fromStatusId)) ||
+    Option.isNone(Workflow.findStatus(workflow, toStatusId)) ||
+    hasNamedAutomationConflict(
+      workflow,
+      spec.id,
+      fromStatusId,
+      spec.automationType,
+    )
+  ) {
+    return Option.none()
+  }
+
+  return Option.some(
+    evo(workflow, {
+      transitions: transitions => [
+        ...transitions,
+        namedAutomationTransition(
+          transitions,
+          spec,
+          fromStatusId,
+          toStatusId,
+          spec.automationType,
+        ),
+      ],
+    }),
+  )
+}
+
+const disableNamedAutomation = (
+  workflow: Workflow.WorkflowDefinition,
+  spec: Workflow.NamedAutomationDefinition,
+): Workflow.WorkflowDefinition =>
+  Option.match(findNamedAutomationTransition(workflow, spec), {
+    onNone: () => workflow,
+    onSome: automation =>
+      evo(workflow, {
+        transitions: transitions =>
+          Array.filter(
+            transitions,
+            transition => transition.id !== automation.id,
+          ),
+      }),
+  })
+
+const hasNamedAutomationConflict = (
+  workflow: Workflow.WorkflowDefinition,
+  transitionId: string,
+  fromStatusId: string,
+  automationType: Workflow.AutomationType,
+): boolean =>
+  Array.some(
+    workflow.transitions,
+    transition =>
+      transition.id !== transitionId &&
+      transition.automationOnly === true &&
+      transition.fromStatusId === fromStatusId &&
+      transition.automationType === automationType,
+  )
+
+const setNamedAutomationSourceStatus = (
+  workflow: Workflow.WorkflowDefinition,
+  spec: Workflow.NamedAutomationDefinition,
+  statusId: string,
+): Option.Option<Workflow.WorkflowDefinition> => {
+  if (Option.isNone(Workflow.findStatus(workflow, statusId))) {
+    return Option.none()
+  }
+
+  return Option.match(findNamedAutomationTransition(workflow, spec), {
+    onNone: () => {
+      const toStatusId = targetStatusIdForSpec(workflow, spec)
+
+      if (
+        Option.isNone(Workflow.findStatus(workflow, toStatusId)) ||
+        hasNamedAutomationConflict(
+          workflow,
+          spec.id,
+          statusId,
+          spec.automationType,
+        )
+      ) {
+        return Option.none()
+      }
+
+      return Option.some(
+        evo(workflow, {
+          transitions: transitions => [
+            ...transitions,
+            namedAutomationTransition(
+              transitions,
+              spec,
+              statusId,
+              toStatusId,
+              spec.automationType,
+            ),
+          ],
+        }),
+      )
+    },
+    onSome: automation => {
+      const automationType = automation.automationType ?? spec.automationType
+
+      if (
+        hasNamedAutomationConflict(
+          workflow,
+          automation.id,
+          statusId,
+          automationType,
+        )
+      ) {
+        return Option.none()
+      }
+
+      return Option.some(
+        Workflow.updateTransition(workflow, automation.id, transition =>
+          Workflow.Transition.make({
+            ...transition,
+            fromStatusId: statusId,
+          }),
+        ),
+      )
+    },
+  })
+}
+
+const setNamedAutomationType = (
+  workflow: Workflow.WorkflowDefinition,
+  spec: Workflow.NamedAutomationDefinition,
+  automationType: Workflow.AutomationType,
+): Option.Option<Workflow.WorkflowDefinition> => {
+  if (
+    !Workflow.isAutomationTypeForDocumentType(
+      workflow.documentType,
+      automationType,
+    )
+  ) {
+    return Option.none()
+  }
+
+  return Option.match(findNamedAutomationTransition(workflow, spec), {
+    onNone: () => {
+      const fromStatusId = sourceStatusIdForSpec(workflow, spec)
+      const toStatusId = targetStatusIdForSpec(workflow, spec)
+
+      if (
+        Option.isNone(Workflow.findStatus(workflow, fromStatusId)) ||
+        Option.isNone(Workflow.findStatus(workflow, toStatusId)) ||
+        hasNamedAutomationConflict(
+          workflow,
+          spec.id,
+          fromStatusId,
+          automationType,
+        )
+      ) {
+        return Option.none()
+      }
+
+      return Option.some(
+        evo(workflow, {
+          transitions: transitions => [
+            ...transitions,
+            namedAutomationTransition(
+              transitions,
+              spec,
+              fromStatusId,
+              toStatusId,
+              automationType,
+            ),
+          ],
+        }),
+      )
+    },
+    onSome: automation => {
+      if (
+        hasNamedAutomationConflict(
+          workflow,
+          automation.id,
+          automation.fromStatusId,
+          automationType,
+        )
+      ) {
+        return Option.none()
+      }
+
+      return Option.some(
+        Workflow.updateTransition(workflow, automation.id, transition =>
+          Workflow.Transition.make({
+            ...transition,
+            automationType,
+          }),
+        ),
+      )
+    },
+  })
+}
+
+const setNamedAutomationTargetStatus = (
+  workflow: Workflow.WorkflowDefinition,
+  spec: Workflow.NamedAutomationDefinition,
+  statusId: string,
+): Option.Option<Workflow.WorkflowDefinition> => {
+  const fromStatusId = sourceStatusIdForSpec(workflow, spec)
+
+  if (
+    Option.isNone(Workflow.findStatus(workflow, fromStatusId)) ||
+    Option.isNone(Workflow.findStatus(workflow, statusId))
+  ) {
+    return Option.none()
+  }
+
+  return Option.match(findNamedAutomationTransition(workflow, spec), {
+    onNone: () => {
+      if (
+        hasNamedAutomationConflict(
+          workflow,
+          spec.id,
+          fromStatusId,
+          spec.automationType,
+        )
+      ) {
+        return Option.none()
+      }
+
+      return Option.some(
+        evo(workflow, {
+          transitions: transitions => [
+            ...transitions,
+            namedAutomationTransition(
+              transitions,
+              spec,
+              fromStatusId,
+              statusId,
+              spec.automationType,
+            ),
+          ],
+        }),
+      )
+    },
+    onSome: automation =>
+      Option.some(
+        Workflow.updateTransition(workflow, automation.id, transition =>
+          Workflow.Transition.make({
+            ...transition,
+            toStatusId: statusId,
+          }),
+        ),
+      ),
+  })
+}
+
+const applyNamedAutomationSpec = (
+  state: NamedAutomationResult,
+  spec: Workflow.NamedAutomationDefinition,
+): NamedAutomationResult => {
+  const hasFromStatus = Option.isSome(
+    Workflow.findStatus(state.workflow, spec.fromStatusId),
+  )
+  const hasToStatus = Option.isSome(
+    Workflow.findStatus(state.workflow, spec.defaultToStatusId),
+  )
+
+  if (!hasFromStatus || !hasToStatus) {
+    return {
+      ...state,
+      skippedCount: state.skippedCount + 1,
+    }
+  }
+
+  const hasAutomation = Option.isSome(
+    findNamedAutomationTransition(state.workflow, spec),
+  )
+
+  if (hasAutomation) {
+    return state
+  }
+
+  const manualTransition = state.workflow.transitions.find(
+    transition =>
+      transition.automationOnly !== true &&
+      transition.fromStatusId === spec.fromStatusId &&
+      transition.toStatusId === spec.defaultToStatusId,
+  )
+
+  if (manualTransition !== undefined) {
+    return {
+      workflow: Workflow.updateTransition(
+        state.workflow,
+        manualTransition.id,
+        transition => automationTransition(transition, spec.automationType),
+      ),
+      addedCount: state.addedCount,
+      convertedCount: state.convertedCount + 1,
+      skippedCount: state.skippedCount,
+    }
+  }
+
+  const transitionId = uniqueTransitionId(state.workflow.transitions, spec.id)
+  const transition = Workflow.Transition.make({
+    id: transitionId,
+    fromStatusId: spec.fromStatusId,
+    toStatusId: spec.defaultToStatusId,
+    allowedRoles: [],
+    automationOnly: true,
+    automationType: spec.automationType,
+    effects: [],
+  })
+
+  return {
+    workflow: evo(state.workflow, {
+      transitions: transitions => [...transitions, transition],
+    }),
+    addedCount: state.addedCount + 1,
+    convertedCount: state.convertedCount,
+    skippedCount: state.skippedCount,
+  }
+}
+
+const applyMissingNamedAutomations = (
+  workflow: Workflow.WorkflowDefinition,
+): NamedAutomationResult =>
+  Array.reduce(
+    namedAutomationSpecsForWorkflow(workflow),
+    { workflow, addedCount: 0, convertedCount: 0, skippedCount: 0 },
+    applyNamedAutomationSpec,
+  )
+
+const namedAutomationBanner = (result: NamedAutomationResult): string => {
+  const appliedCount = result.addedCount + result.convertedCount
+  const skippedSuffix =
+    result.skippedCount === 0
+      ? ''
+      : ` Skipped ${result.skippedCount} missing-status automation${
+          result.skippedCount === 1 ? '' : 's'
+        }.`
+
+  if (appliedCount === 0 && result.skippedCount === 0) {
+    return 'Named automations are already present'
+  }
+
+  if (appliedCount === 0) {
+    return `No named automations applied.${skippedSuffix}`
+  }
+
+  return `Applied ${appliedCount} named automation${
+    appliedCount === 1 ? '' : 's'
+  }.${skippedSuffix}`
+}
+
 const historyDefinitionMatches = (
   definition: Workflow.WorkflowDefinition,
   flowId: string,
@@ -272,7 +744,7 @@ const resetModel = (): Model =>
     documents: DEFAULT_DOCUMENTS,
     nextSequence: DEFAULT_NEXT_SEQUENCE,
     selectedStatusId: DEFAULT_WORKFLOW.initialStatusId,
-    selectedTransitionId: 'submit-to-manager',
+    selectedTransitionId: DEFAULT_WORKFLOW.transitions[0]?.id ?? '',
     selectedItemKind: 'Workflow',
     selectedItemId: '',
     graphPanX: 0,
@@ -363,20 +835,32 @@ const toggleTransitionRole = (
   })
 
 const setTransitionAutomationOnly = (
+  workflow: Workflow.WorkflowDefinition,
   transition: Workflow.Transition,
   value: boolean,
-): Workflow.Transition =>
-  Workflow.Transition.make({
+): Workflow.Transition => {
+  const defaultAutomationType =
+    Workflow.automationTypesForDocumentType(workflow.documentType)[0] ??
+    'REQUISITION_ALL_ITEMS_LINKED'
+  const automationType =
+    transition.automationType &&
+    Workflow.isAutomationTypeForDocumentType(
+      workflow.documentType,
+      transition.automationType,
+    )
+      ? transition.automationType
+      : defaultAutomationType
+
+  return Workflow.Transition.make({
     id: transition.id,
     fromStatusId: transition.fromStatusId,
     toStatusId: transition.toStatusId,
     allowedRoles: value ? [] : transition.allowedRoles,
     automationOnly: value,
-    automationType: value
-      ? (transition.automationType ?? 'ORDER_DELIVERY_FULLY_DELIVERED')
-      : undefined,
+    automationType: value ? automationType : undefined,
     effects: transition.effects,
   })
+}
 
 const setTransitionAutomationType = (
   transition: Workflow.Transition,
@@ -429,6 +913,30 @@ const nextStatus = (model: Model): Workflow.Status => ({
   name: `New status ${model.nextSequence}`,
   type: 'normal',
   editPolicy: Workflow.unlockedEditPolicy,
+})
+
+const uniqueStatusId = (
+  statuses: ReadonlyArray<Workflow.Status>,
+  baseId: string,
+  index = 1,
+): string => {
+  const candidate = index === 1 ? baseId : `${baseId}-${index}`
+
+  return Array.some(statuses, status => status.id === candidate)
+    ? uniqueStatusId(statuses, baseId, index + 1)
+    : candidate
+}
+
+const duplicateStatus = (
+  model: Model,
+  status: Workflow.Status,
+): Workflow.Status => ({
+  id: uniqueStatusId(model.workflow.statuses, `status-${model.nextSequence}`),
+  name: status.name,
+  type: status.type,
+  editPolicy: Array.map(status.editPolicy, definition =>
+    Workflow.editableAction(definition.action, definition.allowedRoles),
+  ),
 })
 
 const nextTransition = (model: Model): Workflow.Transition => ({
@@ -889,6 +1397,37 @@ export const update = (model: Model, message: Message): UpdateReturn => {
         )
       },
 
+      ClickedDuplicatedStatus: ({ statusId }) =>
+        pipe(
+          Workflow.findStatus(model.workflow, statusId),
+          Option.match({
+            onNone: () => [
+              evo(model, { banner: () => 'Status not found' }),
+              [],
+            ],
+            onSome: sourceStatus => {
+              const status = duplicateStatus(model, sourceStatus)
+
+              return saveFlowChange(
+                evo(model, {
+                  workflow: workflow =>
+                    evo(workflow, {
+                      statuses: statuses => [...statuses, status],
+                    }),
+                  selectedStatusId: () => status.id,
+                  selectedItemKind: () => 'Status',
+                  selectedItemId: () => status.id,
+                  isActionMenuOpen: () => false,
+                  graphContextMenuState: () => GraphContextMenuClosed(),
+                  nextSequence: value => value + 1,
+                  banner: () => 'Status duplicated',
+                }),
+                model,
+              )
+            },
+          }),
+        ),
+
       ClickedDeletedStatus: ({ statusId }) => {
         if (statusId === model.workflow.initialStatusId) {
           return [
@@ -953,15 +1492,30 @@ export const update = (model: Model, message: Message): UpdateReturn => {
           evo(model, {
             workflow: workflow =>
               Workflow.updateTransition(workflow, transitionId, transition =>
-                setTransitionAutomationOnly(transition, value),
+                setTransitionAutomationOnly(workflow, transition, value),
               ),
             banner: () => 'Transition automation setting updated',
           }),
           model,
         ),
 
-      SelectedTransitionAutomationType: ({ transitionId, automationType }) =>
-        saveFlowChange(
+      SelectedTransitionAutomationType: ({ transitionId, automationType }) => {
+        if (
+          !Workflow.isAutomationTypeForDocumentType(
+            model.workflow.documentType,
+            automationType,
+          )
+        ) {
+          return [
+            evo(model, {
+              banner: () =>
+                'Automation type is not available for this flow type',
+            }),
+            [],
+          ]
+        }
+
+        return saveFlowChange(
           evo(model, {
             workflow: workflow =>
               Workflow.updateTransition(workflow, transitionId, transition =>
@@ -970,7 +1524,8 @@ export const update = (model: Model, message: Message): UpdateReturn => {
             banner: () => 'Transition automation type updated',
           }),
           model,
-        ),
+        )
+      },
 
       ClickedMovedTransitionEarlier: ({ transitionId }) => {
         const nextTransitions = moveTransition(
@@ -1595,6 +2150,236 @@ export const update = (model: Model, message: Message): UpdateReturn => {
           model,
           defaultWorkflowForDocumentType(model.selectedFlowDocumentType),
           'Default flow restored',
+        ),
+
+      ClickedAppliedMissingAutomations: () => {
+        const result = applyMissingNamedAutomations(model.workflow)
+        const banner = namedAutomationBanner(result)
+        const appliedCount = result.addedCount + result.convertedCount
+
+        if (appliedCount === 0) {
+          return [evo(model, { banner: () => banner }), []]
+        }
+
+        return saveFlowChange(
+          evo(model, {
+            workflow: () => result.workflow,
+            banner: () => banner,
+            isActionMenuOpen: () => false,
+            graphContextMenuState: () => GraphContextMenuClosed(),
+          }),
+          model,
+        )
+      },
+
+      UpdatedNamedAutomationEnabled: ({ automationId, value }) =>
+        pipe(
+          findNamedAutomationSpec(model.workflow, automationId),
+          Option.match({
+            onNone: () => [
+              evo(model, { banner: () => 'Named automation not available' }),
+              [],
+            ],
+            onSome: spec => {
+              const existing = findNamedAutomationTransition(
+                model.workflow,
+                spec,
+              )
+
+              if (value && Option.isSome(existing)) {
+                return [
+                  evo(model, {
+                    banner: () => 'Named automation already enabled',
+                  }),
+                  [],
+                ]
+              }
+
+              if (!value && Option.isNone(existing)) {
+                return [
+                  evo(model, {
+                    banner: () => 'Named automation already disabled',
+                  }),
+                  [],
+                ]
+              }
+
+              const maybeWorkflow = value
+                ? enableNamedAutomation(model.workflow, spec)
+                : Option.some(disableNamedAutomation(model.workflow, spec))
+
+              return Option.match(maybeWorkflow, {
+                onNone: () => [
+                  evo(model, {
+                    banner: () =>
+                      'Cannot enable named automation because required statuses are missing',
+                  }),
+                  [],
+                ],
+                onSome: workflow =>
+                  saveFlowChange(
+                    evo(model, {
+                      workflow: () => workflow,
+                      banner: () =>
+                        value
+                          ? 'Named automation enabled'
+                          : 'Named automation disabled',
+                    }),
+                    model,
+                  ),
+              })
+            },
+          }),
+        ),
+
+      SelectedNamedAutomationSourceStatus: ({ automationId, statusId }) =>
+        pipe(
+          findNamedAutomationSpec(model.workflow, automationId),
+          Option.match({
+            onNone: () => [
+              evo(model, { banner: () => 'Named automation not available' }),
+              [],
+            ],
+            onSome: spec => {
+              const existing = findNamedAutomationTransition(
+                model.workflow,
+                spec,
+              )
+
+              if (
+                Option.isSome(existing) &&
+                existing.value.fromStatusId === statusId
+              ) {
+                return [
+                  evo(model, {
+                    banner: () => 'Named automation source unchanged',
+                  }),
+                  [],
+                ]
+              }
+
+              return pipe(
+                setNamedAutomationSourceStatus(model.workflow, spec, statusId),
+                Option.match({
+                  onNone: () => [
+                    evo(model, {
+                      banner: () =>
+                        'Cannot update named automation because required statuses are missing or it would duplicate another automation',
+                    }),
+                    [],
+                  ],
+                  onSome: workflow =>
+                    saveFlowChange(
+                      evo(model, {
+                        workflow: () => workflow,
+                        banner: () => 'Named automation source updated',
+                      }),
+                      model,
+                    ),
+                }),
+              )
+            },
+          }),
+        ),
+
+      SelectedNamedAutomationTargetStatus: ({ automationId, statusId }) =>
+        pipe(
+          findNamedAutomationSpec(model.workflow, automationId),
+          Option.match({
+            onNone: () => [
+              evo(model, { banner: () => 'Named automation not available' }),
+              [],
+            ],
+            onSome: spec => {
+              const existing = findNamedAutomationTransition(
+                model.workflow,
+                spec,
+              )
+
+              if (
+                Option.isSome(existing) &&
+                existing.value.toStatusId === statusId
+              ) {
+                return [
+                  evo(model, {
+                    banner: () => 'Named automation target unchanged',
+                  }),
+                  [],
+                ]
+              }
+
+              return pipe(
+                setNamedAutomationTargetStatus(model.workflow, spec, statusId),
+                Option.match({
+                  onNone: () => [
+                    evo(model, {
+                      banner: () =>
+                        'Cannot update named automation because required statuses are missing or it would duplicate another automation',
+                    }),
+                    [],
+                  ],
+                  onSome: workflow =>
+                    saveFlowChange(
+                      evo(model, {
+                        workflow: () => workflow,
+                        banner: () => 'Named automation target updated',
+                      }),
+                      model,
+                    ),
+                }),
+              )
+            },
+          }),
+        ),
+
+      SelectedNamedAutomationType: ({ automationId, automationType }) =>
+        pipe(
+          findNamedAutomationSpec(model.workflow, automationId),
+          Option.match({
+            onNone: () => [
+              evo(model, { banner: () => 'Named automation not available' }),
+              [],
+            ],
+            onSome: spec => {
+              const existing = findNamedAutomationTransition(
+                model.workflow,
+                spec,
+              )
+
+              if (
+                Option.isSome(existing) &&
+                existing.value.automationType === automationType
+              ) {
+                return [
+                  evo(model, {
+                    banner: () => 'Named automation type unchanged',
+                  }),
+                  [],
+                ]
+              }
+
+              return pipe(
+                setNamedAutomationType(model.workflow, spec, automationType),
+                Option.match({
+                  onNone: () => [
+                    evo(model, {
+                      banner: () =>
+                        'Cannot update named automation because the type is unavailable or would duplicate another automation',
+                    }),
+                    [],
+                  ],
+                  onSome: workflow =>
+                    saveFlowChange(
+                      evo(model, {
+                        workflow: () => workflow,
+                        banner: () => 'Named automation type updated',
+                      }),
+                      model,
+                    ),
+                }),
+              )
+            },
+          }),
         ),
 
       ClickedLoadedRemoteFlowDefinitions: () => [

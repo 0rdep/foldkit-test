@@ -49,6 +49,9 @@ export const ClickedToggledStatusActionDisclosure = m(
   },
 )
 export const ClickedAddedStatus = m('ClickedAddedStatus')
+export const ClickedDuplicatedStatus = m('ClickedDuplicatedStatus', {
+  statusId: S.String,
+})
 export const ClickedDeletedStatus = m('ClickedDeletedStatus', {
   statusId: S.String,
 })
@@ -120,6 +123,34 @@ export const SelectedDeliveryAutomationStatus = m(
     statusId: S.String,
   },
 )
+export const ClickedAppliedMissingAutomations = m(
+  'ClickedAppliedMissingAutomations',
+)
+export const UpdatedNamedAutomationEnabled = m(
+  'UpdatedNamedAutomationEnabled',
+  {
+    automationId: S.String,
+    value: S.Boolean,
+  },
+)
+export const SelectedNamedAutomationSourceStatus = m(
+  'SelectedNamedAutomationSourceStatus',
+  {
+    automationId: S.String,
+    statusId: S.String,
+  },
+)
+export const SelectedNamedAutomationTargetStatus = m(
+  'SelectedNamedAutomationTargetStatus',
+  {
+    automationId: S.String,
+    statusId: S.String,
+  },
+)
+export const SelectedNamedAutomationType = m('SelectedNamedAutomationType', {
+  automationId: S.String,
+  automationType: Workflow.AutomationType,
+})
 export const SelectedActor = m('SelectedActor', { actorId: S.String })
 export const SelectedDocument = m('SelectedDocument', { documentId: S.String })
 export const UpdatedDocumentAmount = m('UpdatedDocumentAmount', {
@@ -256,6 +287,7 @@ export const Message = S.Union([
   ClickedToggledStatusActionRole,
   ClickedToggledStatusActionDisclosure,
   ClickedAddedStatus,
+  ClickedDuplicatedStatus,
   ClickedDeletedStatus,
   SelectedTransition,
   ClickedToggledTransitionRole,
@@ -273,6 +305,11 @@ export const Message = S.Union([
   ClickedRemovedDeliveryAutomation,
   UpdatedDeliveryAutomationEnabled,
   SelectedDeliveryAutomationStatus,
+  ClickedAppliedMissingAutomations,
+  UpdatedNamedAutomationEnabled,
+  SelectedNamedAutomationSourceStatus,
+  SelectedNamedAutomationTargetStatus,
+  SelectedNamedAutomationType,
   SelectedActor,
   SelectedDocument,
   UpdatedDocumentAmount,
